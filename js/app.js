@@ -2,6 +2,8 @@
 class RestaurantAdmin {
     constructor() {
         this.currentPage = 'dashboard';
+        this.apiBaseUrl = 'https://your-server.com/api'; // ЗАМЕНИТЕ НА ВАШ URL
+        this.token = null;
         this.init();
     }
 
@@ -9,11 +11,117 @@ class RestaurantAdmin {
     init() {
         console.log('🚀 Restaurant Admin запущен!');
 
-        // Загружаем начальную страницу
-        this.loadPage(this.currentPage);
+        // Проверяем авторизацию
+        this.checkAuth();
 
         // Настраиваем навигацию
         this.setupNavigation();
+    }
+
+    // Проверка авторизации
+    checkAuth() {
+        this.token = localStorage.getItem('restaurantToken');
+
+        if (this.token) {
+            // Пользователь авторизован
+            document.body.classList.add('logged-in');
+            this.loadPage(this.currentPage);
+            console.log('Токен найден:', this.token);
+        } else {
+            // Показываем экран входа
+            document.body.classList.remove('logged-in');
+            console.log('Токен не найден');
+        }
+    }
+
+    // Вход в систему
+    login() {
+        const tokenInput = document.getElementById('authToken');
+        const token = tokenInput.value.trim();
+
+        if (!token) {
+            alert('Введите токен доступа');
+            return;
+        }
+
+        // Сохраняем токен
+        this.token = token;
+        localStorage.setItem('restaurantToken', token);
+
+        // Проверяем токен через API
+        this.testToken()
+            .then(success => {
+                if (success) {
+                    document.body.classList.add('logged-in');
+                    this.loadPage(this.currentPage);
+                } else {
+                    alert('Неверный токен доступа');
+                    localStorage.removeItem('restaurantToken');
+                    this.token = null;
+                }
+            })
+            .catch(error => {
+                console.error('Ошибка проверки токена:', error);
+                alert('Ошибка подключения к серверу');
+            });
+    }
+
+    // Выход из системы
+    logout() {
+        if (confirm('Вы уверены, что хотите выйти?')) {
+            localStorage.removeItem('restaurantToken');
+            this.token = null;
+            document.body.classList.remove('logged-in');
+            // Очищаем поле ввода токена
+            document.getElementById('authToken').value = '';
+        }
+    }
+
+    // Тестирование токена через API
+    async testToken() {
+        try {
+            // TODO: Заменить на реальный API вызов
+            // const response = await this.apiRequest('/auth/verify', 'GET');
+            // return response.success;
+
+            // Временно всегда возвращаем true для демо
+            return true;
+        } catch (error) {
+            console.error('Ошибка проверки токена:', error);
+            return false;
+        }
+    }
+
+    // Универсальный метод для API запросов
+    async apiRequest(endpoint, method = 'GET', data = null) {
+        const url = `${this.apiBaseUrl}${endpoint}`;
+        const headers = {
+            'Authorization': `Bearer ${this.token}`,
+            'Content-Type': 'application/json'
+        };
+
+        const config = {
+            method: method,
+            headers: headers
+        };
+
+        if (data && (method === 'POST' || method === 'PUT')) {
+            config.body = JSON.stringify(data);
+        }
+
+        try {
+            const response = await fetch(url, config);
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.message || 'API request failed');
+            }
+
+            return result;
+        } catch (error) {
+            console.error('API Error:', error);
+            throw error;
+        }
     }
 
     // Настройка навигации
@@ -433,13 +541,13 @@ class RestaurantAdmin {
                 break;
             case 'month':
                 chartData = {
-                    labels: ['Нед 1', 'Нед 2', 'Нед 3', 'Нед 4'],
+                    labels: ['Нед1', 'Нед2', 'Нед3', 'Нед4'],
                     data: [80000, 95000, 110000, 125000]
                 };
                 break;
             case '90days':
                 chartData = {
-                    labels: ['Месяц 1', 'Месяц 2', 'Месяц 3'],
+                    labels: ['Месяц1', 'Месяц2', 'Месяц3'],
                     data: [350000, 420000, 380000]
                 };
                 break;
@@ -492,6 +600,178 @@ class RestaurantAdmin {
         }
     }
 
+    // Функции работы с товарами
+
+    // Показать модальное окно добавления товара
+    showAddProductModal() {
+        this.openProductModal('add');
+    }
+
+    // Показать модальное окно редактирования товара
+    editProduct(productId) {
+        this.openProductModal('edit', productId);
+    }
+
+    // Открыть модальное окно товара
+    openProductModal(mode, productId = null) {
+        const modal = document.getElementById('productModal');
+        const title = document.getElementById('productModalTitle');
+
+        // Сброс формы
+        document.getElementById('productForm').reset();
+        document.getElementById('imageFileName').textContent = 'Файл не выбран';
+
+        if (mode === 'add') {
+            title.textContent = 'Добавить товар';
+            document.getElementById('productId').value = '';
+        } else {
+            title.textContent = 'Редактировать товар';
+            // Загружаем данные товара для редактирования
+            this.loadProductForEdit(productId);
+        }
+
+        // Заполняем категории
+        this.fillCategories();
+
+        // Обновляем labels в зависимости от типа товара
+        this.onUnitChange();
+
+        modal.style.display = 'flex';
+    }
+
+    // Загрузить товар для редактирования
+    loadProductForEdit(productId) {
+        // Пока используем mock данные, потом заменим на API
+        const product = window.mockData.products.find(p => p.id == productId);
+        if (product) {
+            document.getElementById('productId').value = product.id;
+            document.getElementById('productName').value = product.name;
+            document.getElementById('productCategory').value = product.category;
+            document.getElementById('productUnit').value = product.unit;
+            document.getElementById('productPrice').value = product.price;
+            document.getElementById('productVat').value = product.vat || '20';
+            document.getElementById('productMinQuantity').value = product.min_quantity || 1;
+            document.getElementById('productMaxQuantity').value = product.max_quantity || 999;
+            document.getElementById('productHonestMark').value = product.honest_mark || '';
+            document.getElementById('productDescription').value = product.description || '';
+        }
+    }
+
+    // Заполнить список категорий
+    fillCategories() {
+        const categorySelect = document.getElementById('productCategory');
+        categorySelect.innerHTML = '<option value="">Выберите категорию</option>';
+
+        if (window.mockData && window.mockData.categories) {
+            window.mockData.categories.forEach(category => {
+                const option = document.createElement('option');
+                option.value = category;
+                option.textContent = category;
+                categorySelect.appendChild(option);
+            });
+        }
+    }
+
+    // Изменение labels при смене типа товара
+    onUnitChange() {
+        const unit = document.getElementById('productUnit').value;
+        const priceLabel = document.getElementById('priceLabel');
+        const minLabel = document.getElementById('minQuantityLabel');
+        const maxLabel = document.getElementById('maxQuantityLabel');
+
+        if (unit === 'weight') {
+            priceLabel.textContent = 'Цена за 100г *';
+            minLabel.textContent = 'Мин. вес (г) *';
+            maxLabel.textContent = 'Макс. вес (г) *';
+        } else {
+            priceLabel.textContent = 'Цена за шт *';
+            minLabel.textContent = 'Мин. количество (шт) *';
+            maxLabel.textContent = 'Макс. количество (шт) *';
+        }
+    }
+
+    // Закрыть модальное окно товара
+    closeProductModal() {
+        document.getElementById('productModal').style.display = 'none';
+    }
+
+    // Сохранить товар
+    async saveProduct() {
+        const form = document.getElementById('productForm');
+
+        if (!form.checkValidity()) {
+            alert('Заполните все обязательные поля');
+            return;
+        }
+
+        const productData = {
+            name: document.getElementById('productName').value,
+            category: document.getElementById('productCategory').value,
+            unit: document.getElementById('productUnit').value,
+            price: parseFloat(document.getElementById('productPrice').value),
+            vat: document.getElementById('productVat').value,
+            min_quantity: parseInt(document.getElementById('productMinQuantity').value),
+            max_quantity: parseInt(document.getElementById('productMaxQuantity').value),
+            honest_mark: document.getElementById('productHonestMark').value,
+            description: document.getElementById('productDescription').value
+        };
+
+        const productId = document.getElementById('productId').value;
+        const imageFile = document.getElementById('productImage').files[0];
+
+        try {
+            if (productId) {
+                // Редактирование существующего товара
+                productData.id = productId;
+                await this.updateProduct(productData, imageFile);
+            } else {
+                // Добавление нового товара
+                await this.createProduct(productData, imageFile);
+            }
+
+            this.closeProductModal();
+            this.loadPage('menu'); // Перезагружаем страницу меню
+
+        } catch (error) {
+            console.error('Ошибка сохранения товара:', error);
+            alert('Ошибка сохранения товара: ' + error.message);
+        }
+    }
+
+    // Создать товар (заглушка для API)
+    async createProduct(productData, imageFile) {
+        console.log('Создание товара:', productData);
+        // TODO: Заменить на реальный API вызов
+        // await this.apiRequest('/products', 'POST', productData);
+        alert('Товар создан! (в демо-режиме)');
+    }
+
+    // Обновить товар (заглушка для API)
+    async updateProduct(productData, imageFile) {
+        console.log('Обновление товара:', productData);
+        // TODO: Заменить на реальный API вызов
+        // await this.apiRequest(`/products/${productData.id}`, 'PUT', productData);
+        alert('Товар обновлен! (в демо-режиме)');
+    }
+
+    // Удалить товар
+    async deleteProduct(productId) {
+        if (!confirm('Вы уверены, что хотите удалить этот товар?')) {
+            return;
+        }
+
+        try {
+            // TODO: Заменить на реальный API вызов
+            // await this.apiRequest(`/products/${productId}`, 'DELETE');
+            console.log('Удаление товара:', productId);
+            alert('Товар удален! (в демо-режиме)');
+            this.loadPage('menu'); // Перезагружаем страницу меню
+        } catch (error) {
+            console.error('Ошибка удаления товара:', error);
+            alert('Ошибка удаления товара: ' + error.message);
+        }
+    }
+
     // Вспомогательные методы
     formatPrice(price, unit) {
         if (unit === 'weight') {
@@ -511,20 +791,6 @@ class RestaurantAdmin {
     }
 
     // Заглушки для функционала
-    showAddProductModal() {
-        alert('Форма добавления товара будет реализована в следующей версии');
-    }
-
-    editProduct(productId) {
-        alert(`Редактирование товара ${productId} будет реализовано в следующей версии`);
-    }
-
-    deleteProduct(productId) {
-        if (confirm('Удалить этот товар?')) {
-            alert(`Удаление товара ${productId} будет реализовано в следующей версии`);
-        }
-    }
-
     exportData() {
         alert('Экспорт в Excel будет реализован в следующей версии');
     }

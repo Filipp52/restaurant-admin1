@@ -39,6 +39,10 @@ body {
   z-index: 100;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
   border-radius: 0 0 12px 12px;
+  display: flex;
+  justify-content: center; /* Центрируем содержимое */
+  align-items: center;
+  position: relative; /* Добавляем для позиционирования кнопки */
 }
 
 .nav-title {
@@ -46,6 +50,7 @@ body {
   font-weight: 600;
   text-align: center;
   color: var(--primary-dark);
+  /* flex: 1; Убираем это свойство */
 }
 
 /* Основное содержимое */
@@ -588,4 +593,231 @@ body {
 /* Плавные анимации */
 * {
   transition: color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+}
+
+/* Стили для экрана входа */
+.login-screen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--background); /* Используем основной фон */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.login-container {
+  width: 100%;
+  max-width: 400px;
+  padding: 20px;
+}
+
+.login-card {
+  background: var(--surface);
+  border-radius: 16px;
+  padding: 40px 30px;
+  text-align: center;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.1); /* Более мягкая тень */
+  border: 1px solid var(--border);
+}
+
+.login-card h2 {
+  color: var(--primary);
+  margin-bottom: 12px;
+}
+
+.login-card p {
+  color: var(--text-secondary);
+  margin-bottom: 24px;
+}
+
+.token-input {
+  width: 100%;
+  padding: 16px;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  font-size: 16px;
+  margin-bottom: 20px;
+  text-align: center;
+  font-family: monospace;
+}
+
+.token-input:focus {
+  border-color: var(--primary);
+  outline: none;
+}
+
+.login-btn {
+  margin-bottom: 20px;
+}
+
+.login-help {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* Скрываем основной контент пока не авторизован */
+body:not(.logged-in) .main-content,
+body:not(.logged-in) .nav-bar,
+body:not(.logged-in) .bottom-nav {
+  display: none;
+}
+
+body.logged-in .login-screen {
+  display: none;
+}
+
+.logout-btn {
+  background: var(--primary-light);
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 8px 16px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  color: var(--text-primary);
+  font-weight: 500;
+  position: absolute; /* Абсолютное позиционирование */
+  right: 16px; /* Отступ справа */
+  top: 50%; /* По вертикали по центру */
+  transform: translateY(-50%); /* Центрируем по вертикали */
+}
+
+.logout-btn:hover {
+  background: var(--primary);
+  color: white;
+  transform: translateY(-50%) scale(1.05); /* Сохраняем центрирование и добавляем scale */
+}
+
+/* Стили для модальных окон */
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.modal-content {
+    background: var(--surface);
+    border-radius: 16px;
+    width: 100%;
+    max-width: 600px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+}
+
+.modal-header {
+    padding: 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header h3 {
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.close-btn:hover {
+    color: var(--text-primary);
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+.modal-footer {
+    padding: 20px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+}
+
+/* Стили для форм */
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.form-group {
+    margin-bottom: 16px;
+}
+
+.form-label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 14px;
+}
+
+.form-input {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 16px;
+    background: var(--surface);
+    transition: border-color 0.2s ease;
+}
+
+.form-input:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+.form-input:invalid {
+    border-color: var(--error);
+}
+
+/* Загрузка изображений */
+.image-upload {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.file-name {
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+/* Адаптивность для мобильных */
+@media (max-width: 768px) {
+    .form-row {
+        grid-template-columns: 1fr;
+    }
+
+    .modal-footer {
+        flex-direction: column;
+    }
 }
