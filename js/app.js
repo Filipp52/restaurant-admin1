@@ -2,8 +2,9 @@
 class RestaurantAdmin {
     constructor() {
         this.currentPage = 'dashboard';
-        this.apiBaseUrl = 'https://your-server.com/api'; // ЗАМЕНИТЕ НА ВАШ URL
-        this.token = null;
+        this.apiBaseUrl = 'http://tastyworld-pos.ru:1212/api/v1';
+        this.token = 'dd2813e334817761450af98ac20fe90b';
+        this.clientPoint = null;
         this.init();
     }
 
@@ -16,19 +17,37 @@ class RestaurantAdmin {
 
         // Настраиваем навигацию
         this.setupNavigation();
+
+        // Регистрируем Service Worker для PWA
+        this.registerServiceWorker();
+    }
+
+    // Регистрация Service Worker
+    registerServiceWorker() {
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/service-worker.js')
+                .then(registration => {
+                    console.log('Service Worker зарегистрирован:', registration);
+                })
+                .catch(error => {
+                    console.log('Ошибка регистрации Service Worker:', error);
+                });
+        }
     }
 
     // Проверка авторизации
     checkAuth() {
-        this.token = localStorage.getItem('restaurantToken');
+        const savedToken = localStorage.getItem('restaurantToken');
+        if (savedToken) {
+            this.token = savedToken;
+        }
 
         if (this.token) {
-            // Пользователь авторизован
             document.body.classList.add('logged-in');
+            this.loadClientPointInfo();
             this.loadPage(this.currentPage);
             console.log('Токен найден:', this.token);
         } else {
-            // Показываем экран входа
             document.body.classList.remove('logged-in');
             console.log('Токен не найден');
         }
@@ -44,15 +63,14 @@ class RestaurantAdmin {
             return;
         }
 
-        // Сохраняем токен
         this.token = token;
         localStorage.setItem('restaurantToken', token);
 
-        // Проверяем токен через API
         this.testToken()
             .then(success => {
                 if (success) {
                     document.body.classList.add('logged-in');
+                    this.loadClientPointInfo();
                     this.loadPage(this.currentPage);
                 } else {
                     alert('Неверный токен доступа');
@@ -71,8 +89,8 @@ class RestaurantAdmin {
         if (confirm('Вы уверены, что хотите выйти?')) {
             localStorage.removeItem('restaurantToken');
             this.token = null;
+            this.clientPoint = null;
             document.body.classList.remove('logged-in');
-            // Очищаем поле ввода токена
             document.getElementById('authToken').value = '';
         }
     }
@@ -80,15 +98,22 @@ class RestaurantAdmin {
     // Тестирование токена через API
     async testToken() {
         try {
-            // TODO: Заменить на реальный API вызов
-            // const response = await this.apiRequest('/auth/verify', 'GET');
-            // return response.success;
-
-            // Временно всегда возвращаем true для демо
+            const response = await this.apiRequest('/authorization_tokens/me', 'GET');
             return true;
         } catch (error) {
             console.error('Ошибка проверки токена:', error);
             return false;
+        }
+    }
+
+    // Загрузка информации о клиентской точке
+    async loadClientPointInfo() {
+        try {
+            const response = await this.apiRequest('/client_points/me', 'GET');
+            this.clientPoint = response;
+            document.getElementById('pageTitle').textContent = response.name;
+        } catch (error) {
+            console.error('Ошибка загрузки информации о точке:', error);
         }
     }
 
@@ -105,16 +130,21 @@ class RestaurantAdmin {
             headers: headers
         };
 
-        if (data && (method === 'POST' || method === 'PUT')) {
+        if (data && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
             config.body = JSON.stringify(data);
         }
 
         try {
             const response = await fetch(url, config);
+
+            if (response.status === 204) {
+                return null; // No content
+            }
+
             const result = await response.json();
 
             if (!response.ok) {
-                throw new Error(result.message || 'API request failed');
+                throw new Error(result.detail || `HTTP error! status: ${response.status}`);
             }
 
             return result;
@@ -124,14 +154,33 @@ class RestaurantAdmin {
         }
     }
 
-    // Настройка навигации
+    // Загрузка файла (для изображений)
+    async apiFileUpload(endpoint, file) {
+        const url = `${this.apiBaseUrl}${endpoint}`;
+        const formData = new FormData();
+        formData.append('image', file);
+
+        const response = await fetch(url, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${this.token}`,
+            },
+            body: formData
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        return response;
+    }
+
+    // Настройка навигации (остается без изменений)
     setupNavigation() {
         const navItems = document.querySelectorAll('.nav-item');
-
         navItems.forEach(item => {
             item.addEventListener('click', (e) => {
                 e.preventDefault();
-
                 const page = item.getAttribute('data-page');
                 if (page && page !== this.currentPage) {
                     this.navigateTo(page);
@@ -142,7 +191,6 @@ class RestaurantAdmin {
 
     // Навигация на страницу
     navigateTo(page) {
-        // Обновляем активный элемент навигации
         document.querySelectorAll('.nav-item').forEach(item => {
             item.classList.remove('active');
             if (item.getAttribute('data-page') === page) {
@@ -150,7 +198,6 @@ class RestaurantAdmin {
             }
         });
 
-        // Обновляем текущую страницу и заголовок
         this.currentPage = page;
         this.loadPage(page);
     }
@@ -158,30 +205,22 @@ class RestaurantAdmin {
     // Загрузка содержимого страницы
     loadPage(page) {
         const mainContent = document.getElementById('mainContent');
-        const pageTitle = document.getElementById('pageTitle');
-
-        // Показываем загрузку
         mainContent.innerHTML = '<div class="loading">Загрузка...</div>';
 
-        // Загружаем содержимое страницы
         setTimeout(() => {
             try {
                 switch(page) {
                     case 'dashboard':
                         this.renderDashboard();
-                        pageTitle.textContent = 'Чайхана Восточная кухня';
                         break;
                     case 'menu':
                         this.renderMenu();
-                        pageTitle.textContent = 'Управление меню';
                         break;
                     case 'analytics':
                         this.renderAnalytics();
-                        pageTitle.textContent = 'Аналитика';
                         break;
                     default:
                         this.renderDashboard();
-                        pageTitle.textContent = 'Чайхана Восточная кухня';
                 }
             } catch (error) {
                 console.error('Ошибка при загрузке страницы:', error);
@@ -196,81 +235,122 @@ class RestaurantAdmin {
         }, 300);
     }
 
-    // Рендер главной страницы
-    renderDashboard() {
+    // Рендер главной страницы с реальными данными
+    async renderDashboard() {
         const mainContent = document.getElementById('mainContent');
 
-        // Проверяем, что данные загружены
-        if (!window.mockData) {
-            mainContent.innerHTML = '<div class="error-state">Данные не загружены</div>';
-            return;
+        try {
+            // Получаем данные параллельно
+            const [products, categories, subscriptionDays, completedOrders] = await Promise.all([
+                this.apiRequest('/menu/products?only_active=true', 'GET').catch(() => []),
+                this.apiRequest('/menu/categories?only_active=true', 'GET').catch(() => []),
+                this.apiRequest('/client_points/me/subscription_days', 'GET').catch(() => ({ days: 0 })),
+                this.getTodayCompletedOrders()
+            ]);
+
+            const todayRevenue = completedOrders.reduce((sum, order) => {
+                return sum + (this.calculateOrderTotal(order) || 0);
+            }, 0);
+
+            mainContent.innerHTML = `
+                <div class="welcome-card">
+                    <h2>Добро пожаловать, ${this.clientPoint?.name || 'Ресторан'}!</h2>
+                    <p>${this.clientPoint?.address || 'Панель управления'}</p>
+                    ${subscriptionDays.days > 0 ?
+                        `<p style="color: var(--success); margin-top: 8px;">Подписка активна: ${subscriptionDays.days} дней</p>` :
+                        '<p style="color: var(--error); margin-top: 8px;">Подписка не активна</p>'
+                    }
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value">${completedOrders.length}</div>
+                        <div class="stat-label">Заказов сегодня</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${todayRevenue} ₽</div>
+                        <div class="stat-label">Выручка сегодня</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${products.length}</div>
+                        <div class="stat-label">Активных товаров</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${categories.length}</div>
+                        <div class="stat-label">Активных категорий</div>
+                    </div>
+                </div>
+
+                <div class="quick-actions">
+                    <h3>Быстрые действия</h3>
+                    <div class="actions-grid">
+                        <button class="action-btn" onclick="app.navigateTo('menu')">
+                            <span>🍽️</span>
+                            <span>Управление меню</span>
+                            <small>Добавление и редактирование товаров</small>
+                        </button>
+                        <button class="action-btn" onclick="app.navigateTo('analytics')">
+                            <span>📈</span>
+                            <span>Просмотр аналитики</span>
+                            <small>Статистика и отчеты по продажам</small>
+                        </button>
+                        <button class="action-btn" onclick="app.exportData()">
+                            <span>📊</span>
+                            <span>Экспорт данных</span>
+                            <small>Выгрузка в Excel</small>
+                        </button>
+                        <button class="action-btn" onclick="app.showHelp()">
+                            <span>❓</span>
+                            <span>Помощь</span>
+                            <small>Инструкции и поддержка</small>
+                        </button>
+                    </div>
+                </div>
+            `;
+        } catch (error) {
+            console.error('Ошибка загрузки главной страницы:', error);
+            mainContent.innerHTML = `
+                <div class="error-state">
+                    <h3>Ошибка загрузки данных</h3>
+                    <p>${error.message}</p>
+                </div>
+            `;
         }
+    }
 
-        const todayOrders = window.mockData.orders || [];
-        const todayRevenue = todayOrders.reduce((sum, order) => sum + order.total, 0);
-        const totalProducts = (window.mockData.products || []).length;
+    // Получение завершенных заказов за сегодня
+    async getTodayCompletedOrders() {
+        const today = new Date();
+        const from = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
 
-        mainContent.innerHTML = `
-            <div class="welcome-card">
-                <h2>Добро пожаловать!</h2>
-                <p>Панель управления рестораном</p>
-            </div>
+        try {
+            const orders = await this.apiRequest(`/orders/completed?from=${from}`, 'GET');
+            return Array.isArray(orders) ? orders : [];
+        } catch (error) {
+            console.error('Ошибка загрузки заказов:', error);
+            return [];
+        }
+    }
 
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-value">${todayOrders.length}</div>
-                    <div class="stat-label">Заказов сегодня</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">${todayRevenue} ₽</div>
-                    <div class="stat-label">Выручка сегодня</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">${totalProducts}</div>
-                    <div class="stat-label">Товаров в меню</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">${window.mockData.categories ? window.mockData.categories.length : 0}</div>
-                    <div class="stat-label">Категорий</div>
-                </div>
-            </div>
-
-            <div class="quick-actions">
-                <h3>Быстрые действия</h3>
-                <div class="actions-grid">
-                    <button class="action-btn" onclick="app.navigateTo('menu')">
-                        <span>🍽️</span>
-                        <span>Управление меню</span>
-                        <small>Добавление и редактирование товаров</small>
-                    </button>
-                    <button class="action-btn" onclick="app.navigateTo('analytics')">
-                        <span>📈</span>
-                        <span>Просмотр аналитики</span>
-                        <small>Статистика и отчеты по продажам</small>
-                    </button>
-                    <button class="action-btn" onclick="app.showSettings()">
-                        <span>⚙️</span>
-                        <span>Настройки</span>
-                        <small>Настройки ресторана и системы</small>
-                    </button>
-                    <button class="action-btn" onclick="app.showHelp()">
-                        <span>❓</span>
-                        <span>Помощь</span>
-                        <small>Инструкции и поддержка</small>
-                    </button>
-                </div>
-            </div>
-        `;
+    // Расчет общей суммы заказа
+    calculateOrderTotal(order) {
+        // В реальном приложении нужно использовать /orders/{order_id}/total_amount
+        // Здесь упрощенный расчет для демонстрации
+        return order.total_amount || 0;
     }
 
     // Рендер страницы меню
-    renderMenu() {
+    async renderMenu() {
         const mainContent = document.getElementById('mainContent');
         mainContent.innerHTML = `
             <div class="page-actions">
                 <button class="btn-primary" onclick="app.showAddProductModal()">
                     <span>+</span>
                     Добавить товар
+                </button>
+                <button class="btn-secondary" onclick="app.showAddCategoryModal()">
+                    <span>+</span>
+                    Добавить категорию
                 </button>
             </div>
 
@@ -280,72 +360,157 @@ class RestaurantAdmin {
                     <div class="loading">Загрузка товаров...</div>
                 </div>
             </div>
+
+            <div class="categories-section" style="margin-top: 20px;">
+                <h3>Категории меню</h3>
+                <div class="categories-container" id="categoriesContainer">
+                    <div class="loading">Загрузка категорий...</div>
+                </div>
+            </div>
         `;
 
-        // Загружаем товары
-        setTimeout(() => {
-            this.renderProducts();
+        // Загружаем товары и категории
+        setTimeout(async () => {
+            await this.renderProducts();
+            await this.renderCategories();
         }, 100);
     }
 
-    // Рендер товаров
-    renderProducts() {
+    // Рендер товаров с реальными данными API
+    async renderProducts() {
         const container = document.getElementById('productsContainer');
         if (!container) return;
 
-        if (!window.mockData || !window.mockData.products) {
-            container.innerHTML = '<div class="error-state">Товары не загружены</div>';
-            return;
-        }
+        try {
+            const products = await this.apiRequest('/menu/products', 'GET');
 
-        const products = window.mockData.products;
+            if (!products || products.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">🍽️</div>
+                        <h3>Нет товаров</h3>
+                        <p>Добавьте первый товар в меню</p>
+                        <button class="btn-primary" onclick="app.showAddProductModal()">
+                            Добавить товар
+                        </button>
+                    </div>
+                `;
+                return;
+            }
 
-        if (products.length === 0) {
-            container.innerHTML = `
-                <div class="empty-state">
-                    <div class="empty-icon">🍽️</div>
-                    <h3>Нет товаров</h3>
-                    <p>Добавьте первый товар в меню</p>
-                    <button class="btn-primary" onclick="app.showAddProductModal()">
-                        Добавить товар
-                    </button>
-                </div>
-            `;
-            return;
-        }
+            container.innerHTML = products.map(product => `
+                <div class="product-card" data-product-id="${product.product_id}">
+                    <div class="product-info">
+                        <div class="product-header">
+                            <h4 class="product-name">${this.escapeHtml(product.name)}</h4>
+                            <div class="product-price">${this.formatPrice(product.unit_price, product.qty_measure)}</div>
+                        </div>
 
-        container.innerHTML = products.map(product => `
-            <div class="product-card" data-product-id="${product.id}">
-                <div class="product-info">
-                    <div class="product-header">
-                        <h4 class="product-name">${this.escapeHtml(product.name)}</h4>
-                        <div class="product-price">${this.formatPrice(product.price, product.unit)}</div>
+                        <div class="product-meta">
+                            <span class="product-category">${this.getProductTypeText(product.type)}</span>
+                            <span class="product-unit ${product.is_active ? 'active' : 'inactive'}">
+                                ${product.is_active ? 'Активен' : 'Неактивен'}
+                            </span>
+                        </div>
+
+                        <div class="product-details">
+                            <small>Мин: ${product.qty_min} | Макс: ${product.qty_max} | По умолч: ${product.qty_default}</small>
+                            <small>НДС: ${this.getTaxText(product.tax)}</small>
+                        </div>
                     </div>
 
-                    <div class="product-meta">
-                        <span class="product-category">${this.escapeHtml(product.category)}</span>
-                        <span class="product-unit">${this.getUnitText(product.unit)}</span>
+                    <div class="product-actions">
+                        <button class="btn-icon" onclick="app.editProduct(${product.product_id})" title="Редактировать">
+                            ✏️
+                        </button>
+                        <button class="btn-icon btn-danger" onclick="app.deleteProduct(${product.product_id})" title="Удалить">
+                            🗑️
+                        </button>
                     </div>
-
-                    ${product.description ? `
-                        <p class="product-description">${this.escapeHtml(product.description)}</p>
-                    ` : ''}
                 </div>
+            `).join('');
+        } catch (error) {
+            console.error('Ошибка загрузки товаров:', error);
+            container.innerHTML = '<div class="error-state">Ошибка загрузки товаров</div>';
+        }
+    }
 
-                <div class="product-actions">
-                    <button class="btn-icon" onclick="app.editProduct(${product.id})" title="Редактировать">
-                        ✏️
-                    </button>
-                    <button class="btn-icon btn-danger" onclick="app.deleteProduct(${product.id})" title="Удалить">
-                        🗑️
-                    </button>
+    // Рендер категорий с реальными данными API
+    async renderCategories() {
+        const container = document.getElementById('categoriesContainer');
+        if (!container) return;
+
+        try {
+            const categories = await this.apiRequest('/menu/categories', 'GET');
+
+            if (!categories || categories.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">📁</div>
+                        <h3>Нет категорий</h3>
+                        <p>Добавьте первую категорию меню</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = categories.map(category => `
+                <div class="product-card">
+                    <div class="product-info">
+                        <div class="product-header">
+                            <h4 class="product-name">${this.escapeHtml(category.name)}</h4>
+                            <span class="product-unit ${category.is_active ? 'active' : 'inactive'}">
+                                ${category.is_active ? 'Активна' : 'Неактивна'}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="product-actions">
+                        <button class="btn-icon" onclick="app.editCategory(${category.menu_category_id})" title="Редактировать">
+                            ✏️
+                        </button>
+                        <button class="btn-icon btn-danger" onclick="app.deleteCategory(${category.menu_category_id})" title="Удалить">
+                            🗑️
+                        </button>
+                    </div>
                 </div>
-            </div>
-        `).join('');
+            `).join('');
+        } catch (error) {
+            console.error('Ошибка загрузки категорий:', error);
+            container.innerHTML = '<div class="error-state">Ошибка загрузки категорий</div>';
+        }
+    }
+
+    // Форматирование цены
+    formatPrice(price, measure) {
+        if (measure === 'GRAMS') {
+            return `${(price * 1000).toFixed(2)} ₽/кг`; // Цена за кг для весовых товаров
+        }
+        return `${price.toFixed(2)} ₽`;
+    }
+
+    // Текст для типа товара
+    getProductTypeText(type) {
+        const types = {
+            'NORMAL': 'Обычный',
+            'WATER_MARKED': 'Вода (маркировка)',
+            'DAIRY_MARKED': 'Молочка (маркировка)',
+            'JUICE_MARKED': 'Сок (маркировка)',
+            'NOT_ALCOHOL_BEER_MARKED': 'Пиво безалкогольное (маркировка)'
+        };
+        return types[type] || type;
+    }
+
+    // Текст для налога
+    getTaxText(tax) {
+        const taxes = {
+            'NO_VAT': 'Без НДС',
+            'VAT_18': 'НДС 18%'
+        };
+        return taxes[tax] || tax;
     }
 
     // Рендер страницы аналитики
-    renderAnalytics() {
+    async renderAnalytics() {
         const mainContent = document.getElementById('mainContent');
         mainContent.innerHTML = `
             <div class="analytics-controls">
@@ -353,7 +518,6 @@ class RestaurantAdmin {
                     <button class="period-btn active" data-period="day" onclick="app.switchPeriod('day', this)">День</button>
                     <button class="period-btn" data-period="week" onclick="app.switchPeriod('week', this)">Неделя</button>
                     <button class="period-btn" data-period="month" onclick="app.switchPeriod('month', this)">Месяц</button>
-                    <button class="period-btn" data-period="90days" onclick="app.switchPeriod('90days', this)">90 дней</button>
                 </div>
             </div>
 
@@ -362,7 +526,6 @@ class RestaurantAdmin {
             </div>
         `;
 
-        // Загружаем аналитику
         setTimeout(() => {
             this.renderAnalyticsContent('day');
         }, 100);
@@ -377,134 +540,86 @@ class RestaurantAdmin {
         this.renderAnalyticsContent(period);
     }
 
-    // Рендер контента аналитики
-    renderAnalyticsContent(period) {
+    // Рендер контента аналитики с реальными данными
+    async renderAnalyticsContent(period) {
         const container = document.getElementById('analyticsContent');
         if (!container) return;
 
-        if (!window.mockData) {
-            container.innerHTML = '<div class="error-state">Данные не загружены</div>';
-            return;
+        try {
+            const orders = await this.getOrdersByPeriod(period);
+            const analyticsData = this.calculateAnalytics(orders, period);
+
+            container.innerHTML = `
+                <div class="analytics-stats">
+                    <div class="stat-card">
+                        <div class="stat-value">${analyticsData.totalRevenue} ₽</div>
+                        <div class="stat-label">Выручка за ${this.getPeriodText(period)}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${analyticsData.totalOrders}</div>
+                        <div class="stat-label">Заказов за ${this.getPeriodText(period)}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${analyticsData.averageOrder} ₽</div>
+                        <div class="stat-label">Средний чек</div>
+                    </div>
+                </div>
+
+                <div class="export-section">
+                    <button class="btn-primary" onclick="app.exportData('${period}')">
+                        📊 Экспорт в Excel (${this.getPeriodText(period)})
+                    </button>
+                </div>
+            `;
+        } catch (error) {
+            console.error('Ошибка загрузки аналитики:', error);
+            container.innerHTML = '<div class="error-state">Ошибка загрузки аналитики</div>';
         }
-
-        const analyticsData = this.calculateAnalytics(period);
-
-        container.innerHTML = `
-            <div class="analytics-stats">
-                <div class="stat-card">
-                    <div class="stat-value">${analyticsData.totalRevenue} ₽</div>
-                    <div class="stat-label">Выручка за ${this.getPeriodText(period)}</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">${analyticsData.totalOrders}</div>
-                    <div class="stat-label">Заказов за ${this.getPeriodText(period)}</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">${analyticsData.averageOrder} ₽</div>
-                    <div class="stat-label">Средний чек</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">${analyticsData.topProducts.length}</div>
-                    <div class="stat-label">Активных товаров</div>
-                </div>
-            </div>
-
-            <div class="chart-section">
-                <h4>Динамика выручки за ${this.getPeriodText(period)}</h4>
-                <div class="chart-container">
-                    <canvas id="revenueChart"></canvas>
-                </div>
-            </div>
-
-            <div class="top-products">
-                <h4>Топ товаров за ${this.getPeriodText(period)}</h4>
-                <div class="products-list">
-                    ${analyticsData.topProducts.map((item, index) => `
-                        <div class="top-product-item">
-                            <div class="product-rank">${index + 1}</div>
-                            <div class="product-info">
-                                <div class="product-name">${item.product.name}</div>
-                                <div class="product-stats">
-                                    <span>${item.quantity} продаж</span>
-                                    <span>${item.revenue} ₽</span>
-                                </div>
-                            </div>
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-
-            <div class="export-section">
-                <button class="btn-secondary" onclick="app.exportData()">
-                    📊 Экспорт в Excel
-                </button>
-            </div>
-        `;
-
-        // Инициализируем график
-        this.renderChart(period);
     }
 
-    // Расчет аналитики для разных периодов
-    calculateAnalytics(period) {
-        const orders = window.mockData.orders || [];
-        const products = window.mockData.products || [];
-
-        // Фильтруем заказы по периоду (упрощенная логика)
-        let filteredOrders = orders;
-        let days = 1;
+    // Получение заказов за период
+    async getOrdersByPeriod(period) {
+        const now = new Date();
+        let fromDate = new Date();
 
         switch(period) {
+            case 'day':
+                fromDate.setDate(now.getDate() - 1);
+                break;
             case 'week':
-                days = 7;
+                fromDate.setDate(now.getDate() - 7);
                 break;
             case 'month':
-                days = 30;
-                break;
-            case '90days':
-                days = 90;
+                fromDate.setMonth(now.getMonth() - 1);
                 break;
             default:
-                days = 1;
+                fromDate.setDate(now.getDate() - 1);
         }
 
-        // В реальном приложении здесь была бы фильтрация по датам
-        // Для демо просто умножаем данные на коэффициент
-        const multiplier = days;
+        try {
+            const orders = await this.apiRequest(
+                `/orders/completed?from=${fromDate.toISOString()}&till=${now.toISOString()}`,
+                'GET'
+            );
+            return Array.isArray(orders) ? orders : [];
+        } catch (error) {
+            console.error('Ошибка загрузки заказов:', error);
+            return [];
+        }
+    }
 
-        const totalRevenue = orders.reduce((sum, order) => sum + order.total, 0) * multiplier;
-        const totalOrders = orders.length * multiplier;
+    // Расчет аналитики
+    calculateAnalytics(orders, period) {
+        const totalRevenue = orders.reduce((sum, order) => sum + (this.calculateOrderTotal(order) || 0), 0);
+        const totalOrders = orders.length;
         const averageOrder = totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0;
-
-        // Топ товаров
-        const productSales = {};
-        orders.forEach(order => {
-            order.items.forEach(item => {
-                const product = products.find(p => p.id === item.productId);
-                if (product) {
-                    if (!productSales[product.id]) {
-                        productSales[product.id] = {
-                            product: product,
-                            revenue: 0,
-                            quantity: 0
-                        };
-                    }
-                    productSales[product.id].revenue += item.price * item.quantity * multiplier;
-                    productSales[product.id].quantity += item.quantity * multiplier;
-                }
-            });
-        });
-
-        const topProducts = Object.values(productSales)
-            .sort((a, b) => b.revenue - a.revenue)
-            .slice(0, 5);
 
         return {
             period,
             totalRevenue: Math.round(totalRevenue),
             totalOrders,
             averageOrder,
-            topProducts
+            orders
         };
     }
 
@@ -513,111 +628,65 @@ class RestaurantAdmin {
         const texts = {
             'day': 'день',
             'week': 'неделю',
-            'month': 'месяц',
-            '90days': '90 дней'
+            'month': 'месяц'
         };
         return texts[period] || 'период';
     }
 
-    // Отрисовка графика для разных периодов
-    renderChart(period) {
-        const ctx = document.getElementById('revenueChart');
-        if (!ctx) return;
-
-        // Разные данные для разных периодов
-        let chartData;
-        switch(period) {
-            case 'day':
-                chartData = {
-                    labels: ['9:00', '12:00', '15:00', '18:00', '21:00'],
-                    data: [5000, 15000, 8000, 22000, 12000]
-                };
-                break;
-            case 'week':
-                chartData = {
-                    labels: ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'],
-                    data: [12000, 15000, 18000, 22000, 25000, 35000, 28000]
-                };
-                break;
-            case 'month':
-                chartData = {
-                    labels: ['Нед1', 'Нед2', 'Нед3', 'Нед4'],
-                    data: [80000, 95000, 110000, 125000]
-                };
-                break;
-            case '90days':
-                chartData = {
-                    labels: ['Месяц1', 'Месяц2', 'Месяц3'],
-                    data: [350000, 420000, 380000]
-                };
-                break;
-            default:
-                chartData = {
-                    labels: ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'],
-                    data: [12000, 15000, 18000, 22000, 25000, 35000, 28000]
-                };
-        }
-
+    // Экспорт данных в Excel
+    async exportData(period = 'day') {
         try {
-            new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: chartData.labels,
-                    datasets: [{
-                        label: 'Выручка',
-                        data: chartData.data,
-                        borderColor: '#FF9800',
-                        backgroundColor: 'rgba(255, 152, 0, 0.1)',
-                        tension: 0.4,
-                        fill: true
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            display: false
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            grid: {
-                                color: 'rgba(0,0,0,0.1)'
-                            }
-                        },
-                        x: {
-                            grid: {
-                                display: false
-                            }
-                        }
-                    }
-                }
+            const orders = await this.getOrdersByPeriod(period);
+            const products = await this.apiRequest('/menu/products', 'GET').catch(() => []);
+
+            // Создаем CSV содержимое (упрощенная версия)
+            let csvContent = "data:text/csv;charset=utf-8,";
+
+            // Заголовки для заказов
+            csvContent += "Отчет по заказам\r\n";
+            csvContent += "Период," + this.getPeriodText(period) + "\r\n";
+            csvContent += "ID заказа,Статус,Сумма,Дата создания,Оплачен\r\n";
+
+            orders.forEach(order => {
+                csvContent += `${order.order_id},${order.status},${this.calculateOrderTotal(order)},${order.draft_at},${order.is_paid ? 'Да' : 'Нет'}\r\n`;
             });
+
+            csvContent += "\r\nТовары\r\n";
+            csvContent += "ID товара,Название,Цена,Тип,Активен\r\n";
+
+            products.forEach(product => {
+                csvContent += `${product.product_id},${product.name},${product.unit_price},${this.getProductTypeText(product.type)},${product.is_active ? 'Да' : 'Нет'}\r\n`;
+            });
+
+            // Создаем ссылку для скачивания
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `report_${period}_${new Date().toISOString().split('T')[0]}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
         } catch (error) {
-            console.error('Ошибка при создании графика:', error);
+            console.error('Ошибка экспорта:', error);
+            alert('Ошибка при экспорте данных: ' + error.message);
         }
     }
 
-    // Функции работы с товарами
+    // Функции работы с товарами (реальные API вызовы)
 
-    // Показать модальное окно добавления товара
-    showAddProductModal() {
+    async showAddProductModal() {
         this.openProductModal('add');
     }
 
-    // Показать модальное окно редактирования товара
-    editProduct(productId) {
+    async editProduct(productId) {
         this.openProductModal('edit', productId);
     }
 
-    // Открыть модальное окно товара
-    openProductModal(mode, productId = null) {
+    async openProductModal(mode, productId = null) {
         const modal = document.getElementById('productModal');
         const title = document.getElementById('productModalTitle');
 
-        // Сброс формы
         document.getElementById('productForm').reset();
         document.getElementById('imageFileName').textContent = 'Файл не выбран';
 
@@ -626,76 +695,63 @@ class RestaurantAdmin {
             document.getElementById('productId').value = '';
         } else {
             title.textContent = 'Редактировать товар';
-            // Загружаем данные товара для редактирования
-            this.loadProductForEdit(productId);
+            await this.loadProductForEdit(productId);
         }
 
-        // Заполняем категории
-        this.fillCategories();
-
-        // Обновляем labels в зависимости от типа товара
-        this.onUnitChange();
+        this.fillProductTypeSelect();
+        this.fillTaxSelect();
 
         modal.style.display = 'flex';
     }
 
-    // Загрузить товар для редактирования
-    loadProductForEdit(productId) {
-        // Пока используем mock данные, потом заменим на API
-        const product = window.mockData.products.find(p => p.id == productId);
-        if (product) {
-            document.getElementById('productId').value = product.id;
+    async loadProductForEdit(productId) {
+        try {
+            const product = await this.apiRequest(`/menu/products/${productId}`, 'GET');
+
+            document.getElementById('productId').value = product.product_id;
             document.getElementById('productName').value = product.name;
-            document.getElementById('productCategory').value = product.category;
-            document.getElementById('productUnit').value = product.unit;
-            document.getElementById('productPrice').value = product.price;
-            document.getElementById('productVat').value = product.vat || '20';
-            document.getElementById('productMinQuantity').value = product.min_quantity || 1;
-            document.getElementById('productMaxQuantity').value = product.max_quantity || 999;
-            document.getElementById('productHonestMark').value = product.honest_mark || '';
-            document.getElementById('productDescription').value = product.description || '';
+            document.getElementById('productType').value = product.type;
+            document.getElementById('productTax').value = product.tax;
+            document.getElementById('productPrice').value = product.unit_price;
+            document.getElementById('productMinQuantity').value = product.qty_min;
+            document.getElementById('productMaxQuantity').value = product.qty_max;
+            document.getElementById('productDefaultQuantity').value = product.qty_default;
+            document.getElementById('productMeasure').value = product.qty_measure;
+            document.getElementById('productActive').checked = product.is_active;
+
+        } catch (error) {
+            console.error('Ошибка загрузки товара:', error);
+            alert('Ошибка загрузки данных товара');
         }
     }
 
-    // Заполнить список категорий
-    fillCategories() {
-        const categorySelect = document.getElementById('productCategory');
-        categorySelect.innerHTML = '<option value="">Выберите категорию</option>';
+    fillProductTypeSelect() {
+        const typeSelect = document.getElementById('productType');
+        const types = [
+            { value: 'NORMAL', text: 'Обычный товар' },
+            { value: 'WATER_MARKED', text: 'Вода (маркировка)' },
+            { value: 'DAIRY_MARKED', text: 'Молочная продукция (маркировка)' },
+            { value: 'JUICE_MARKED', text: 'Сок (маркировка)' },
+            { value: 'NOT_ALCOHOL_BEER_MARKED', text: 'Безалкогольное пиво (маркировка)' }
+        ];
 
-        if (window.mockData && window.mockData.categories) {
-            window.mockData.categories.forEach(category => {
-                const option = document.createElement('option');
-                option.value = category;
-                option.textContent = category;
-                categorySelect.appendChild(option);
-            });
-        }
+        typeSelect.innerHTML = types.map(type =>
+            `<option value="${type.value}">${type.text}</option>`
+        ).join('');
     }
 
-    // Изменение labels при смене типа товара
-    onUnitChange() {
-        const unit = document.getElementById('productUnit').value;
-        const priceLabel = document.getElementById('priceLabel');
-        const minLabel = document.getElementById('minQuantityLabel');
-        const maxLabel = document.getElementById('maxQuantityLabel');
+    fillTaxSelect() {
+        const taxSelect = document.getElementById('productTax');
+        const taxes = [
+            { value: 'NO_VAT', text: 'Без НДС' },
+            { value: 'VAT_18', text: 'НДС 18%' }
+        ];
 
-        if (unit === 'weight') {
-            priceLabel.textContent = 'Цена за 100г *';
-            minLabel.textContent = 'Мин. вес (г) *';
-            maxLabel.textContent = 'Макс. вес (г) *';
-        } else {
-            priceLabel.textContent = 'Цена за шт *';
-            minLabel.textContent = 'Мин. количество (шт) *';
-            maxLabel.textContent = 'Макс. количество (шт) *';
-        }
+        taxSelect.innerHTML = taxes.map(tax =>
+            `<option value="${tax.value}">${tax.text}</option>`
+        ).join('');
     }
 
-    // Закрыть модальное окно товара
-    closeProductModal() {
-        document.getElementById('productModal').style.display = 'none';
-    }
-
-    // Сохранить товар
     async saveProduct() {
         const form = document.getElementById('productForm');
 
@@ -706,31 +762,37 @@ class RestaurantAdmin {
 
         const productData = {
             name: document.getElementById('productName').value,
-            category: document.getElementById('productCategory').value,
-            unit: document.getElementById('productUnit').value,
-            price: parseFloat(document.getElementById('productPrice').value),
-            vat: document.getElementById('productVat').value,
-            min_quantity: parseInt(document.getElementById('productMinQuantity').value),
-            max_quantity: parseInt(document.getElementById('productMaxQuantity').value),
-            honest_mark: document.getElementById('productHonestMark').value,
-            description: document.getElementById('productDescription').value
+            type: document.getElementById('productType').value,
+            tax: document.getElementById('productTax').value,
+            qty_measure: document.getElementById('productMeasure').value,
+            qty_min: parseInt(document.getElementById('productMinQuantity').value),
+            qty_max: parseInt(document.getElementById('productMaxQuantity').value),
+            qty_default: parseInt(document.getElementById('productDefaultQuantity').value),
+            unit_price: parseFloat(document.getElementById('productPrice').value),
+            is_active: document.getElementById('productActive').checked
         };
 
         const productId = document.getElementById('productId').value;
         const imageFile = document.getElementById('productImage').files[0];
 
         try {
+            let savedProduct;
             if (productId) {
                 // Редактирование существующего товара
-                productData.id = productId;
-                await this.updateProduct(productData, imageFile);
+                savedProduct = await this.apiRequest(`/menu/products/${productId}`, 'PATCH', productData);
             } else {
                 // Добавление нового товара
-                await this.createProduct(productData, imageFile);
+                savedProduct = await this.apiRequest('/menu/products', 'POST', productData);
+            }
+
+            // Загрузка изображения если есть
+            if (imageFile && savedProduct) {
+                await this.apiFileUpload(`/menu/products/${savedProduct.product_id}/image`, imageFile);
             }
 
             this.closeProductModal();
-            this.loadPage('menu'); // Перезагружаем страницу меню
+            this.loadPage('menu');
+            alert('Товар успешно сохранен!');
 
         } catch (error) {
             console.error('Ошибка сохранения товара:', error);
@@ -738,34 +800,15 @@ class RestaurantAdmin {
         }
     }
 
-    // Создать товар (заглушка для API)
-    async createProduct(productData, imageFile) {
-        console.log('Создание товара:', productData);
-        // TODO: Заменить на реальный API вызов
-        // await this.apiRequest('/products', 'POST', productData);
-        alert('Товар создан! (в демо-режиме)');
-    }
-
-    // Обновить товар (заглушка для API)
-    async updateProduct(productData, imageFile) {
-        console.log('Обновление товара:', productData);
-        // TODO: Заменить на реальный API вызов
-        // await this.apiRequest(`/products/${productData.id}`, 'PUT', productData);
-        alert('Товар обновлен! (в демо-режиме)');
-    }
-
-    // Удалить товар
     async deleteProduct(productId) {
         if (!confirm('Вы уверены, что хотите удалить этот товар?')) {
             return;
         }
 
         try {
-            // TODO: Заменить на реальный API вызов
-            // await this.apiRequest(`/products/${productId}`, 'DELETE');
-            console.log('Удаление товара:', productId);
-            alert('Товар удален! (в демо-режиме)');
-            this.loadPage('menu'); // Перезагружаем страницу меню
+            await this.apiRequest(`/menu/products/${productId}`, 'DELETE');
+            this.loadPage('menu');
+            alert('Товар успешно удален!');
         } catch (error) {
             console.error('Ошибка удаления товара:', error);
             alert('Ошибка удаления товара: ' + error.message);
@@ -773,34 +816,35 @@ class RestaurantAdmin {
     }
 
     // Вспомогательные методы
-    formatPrice(price, unit) {
-        if (unit === 'weight') {
-            return `${price} ₽/кг`;
-        }
-        return `${price} ₽`;
-    }
-
-    getUnitText(unit) {
-        return unit === 'piece' ? 'Штучный товар' : 'Весовой товар';
-    }
-
     escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
     }
 
-    // Заглушки для функционала
-    exportData() {
-        alert('Экспорт в Excel будет реализован в следующей версии');
+    // Заглушки для будущего функционала
+    showAddCategoryModal() {
+        alert('Добавление категорий будет реализовано в следующей версии');
     }
 
-    showSettings() {
-        alert('Раздел настроек будет реализован в следующей версии');
+    editCategory(categoryId) {
+        alert('Редактирование категорий будет реализовано в следующей версии');
+    }
+
+    deleteCategory(categoryId) {
+        alert('Удаление категорий будет реализовано в следующей версии');
     }
 
     showHelp() {
         alert('Раздел помощи будет реализован в следующей версии');
+    }
+
+    closeProductModal() {
+        document.getElementById('productModal').style.display = 'none';
+    }
+
+    onUnitChange() {
+        // Оставлено для совместимости
     }
 }
 

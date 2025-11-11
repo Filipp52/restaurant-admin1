@@ -62,6 +62,7 @@
     </nav>
 
     <!-- Модальное окно добавления/редактирования товара -->
+    <!-- Модальное окно добавления/редактирования товара -->
     <div id="productModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -81,54 +82,53 @@
 
                     <div class="form-row">
                         <div class="form-group">
-                            <label class="form-label">Категория *</label>
-                            <select id="productCategory" class="form-input" required>
-                                <option value="">Выберите категорию</option>
+                            <label class="form-label">Тип товара *</label>
+                            <select id="productType" class="form-input" required>
+                                <!-- Заполнится через JavaScript -->
                             </select>
                         </div>
                         <div class="form-group">
-                            <label class="form-label">Тип товара *</label>
-                            <select id="productUnit" class="form-input" required onchange="app.onUnitChange()">
-                                <option value="piece">Штучный</option>
-                                <option value="weight">Весовой</option>
+                            <label class="form-label">Налог *</label>
+                            <select id="productTax" class="form-input" required>
+                                <!-- Заполнится через JavaScript -->
                             </select>
                         </div>
                     </div>
 
                     <div class="form-row">
                         <div class="form-group">
-                            <label class="form-label" id="priceLabel">Цена за шт *</label>
+                            <label class="form-label">Единица измерения *</label>
+                            <select id="productMeasure" class="form-input" required>
+                                <option value="PIECES">Штуки</option>
+                                <option value="GRAMS">Граммы</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" id="priceLabel">Цена *</label>
                             <input type="number" id="productPrice" class="form-input" step="0.01" min="0" required>
                         </div>
-                        <div class="form-group">
-                            <label class="form-label">НДС *</label>
-                            <select id="productVat" class="form-input" required>
-                                <option value="0">0%</option>
-                                <option value="10">10%</option>
-                                <option value="20" selected>20%</option>
-                            </select>
-                        </div>
                     </div>
 
                     <div class="form-row">
                         <div class="form-group">
-                            <label class="form-label" id="minQuantityLabel">Мин. количество (шт) *</label>
+                            <label class="form-label">Мин. количество *</label>
                             <input type="number" id="productMinQuantity" class="form-input" min="1" value="1" required>
                         </div>
                         <div class="form-group">
-                            <label class="form-label" id="maxQuantityLabel">Макс. количество (шт) *</label>
+                            <label class="form-label">Макс. количество *</label>
                             <input type="number" id="productMaxQuantity" class="form-input" min="1" value="999" required>
                         </div>
                     </div>
 
-                    <div class="form-group">
-                        <label class="form-label">Честный знак (маркировка)</label>
-                        <input type="text" id="productHonestMark" class="form-input" placeholder="Не обязательно">
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label">Описание</label>
-                        <textarea id="productDescription" class="form-input" rows="3" placeholder="Описание товара"></textarea>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Количество по умолчанию *</label>
+                            <input type="number" id="productDefaultQuantity" class="form-input" min="1" value="1" required>
+                        </div>
+                        <div class="form-group" style="display: flex; align-items: center; margin-top: 25px;">
+                            <input type="checkbox" id="productActive" checked>
+                            <label class="form-label" for="productActive" style="margin-left: 8px; margin-bottom: 0;">Активен</label>
+                        </div>
                     </div>
 
                     <div class="form-group">
@@ -151,7 +151,6 @@
     </div>
 
     <!-- Подключаем JavaScript -->
-    <script src="data/mock-data.js"></script>
     <script src="js/app.js"></script>
 
     <!-- Обработка выбора файла изображения -->
