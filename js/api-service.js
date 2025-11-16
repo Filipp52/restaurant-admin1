@@ -1,19 +1,21 @@
-// Базовый сервис для API запросов с диагностикой
+// Базовый сервис для API запросов с прокси
 class ApiService {
     constructor() {
-        this.baseUrl = 'http://tastyworld-pos.ru:1212/api/v1';
+        // Используем локальный прокси-сервер
+        this.baseUrl = 'http://localhost:3001/api';
         this.token = null;
+        console.log('🔧 API настроен на прокси:', this.baseUrl);
     }
 
     setToken(token) {
         this.token = token;
-        console.log('Token set:', token ? `${token.substring(0, 10)}...` : 'null');
+        console.log('🔑 Токен установлен:', token ? `${token.substring(0, 10)}...` : 'null');
     }
 
     async request(endpoint, options = {}) {
         const url = `${this.baseUrl}${endpoint}`;
 
-        console.log(`🔄 API Request: ${options.method || 'GET'} ${url}`);
+        console.log(`🔄 API Запрос: ${options.method || 'GET'} ${url}`);
 
         const headers = {
             'Authorization': `Bearer ${this.token}`,
@@ -23,8 +25,7 @@ class ApiService {
 
         const config = {
             ...options,
-            headers,
-            mode: 'cors' // Явно указываем режим CORS
+            headers
         };
 
         // Убираем Content-Type для FormData
@@ -33,41 +34,31 @@ class ApiService {
         }
 
         try {
-            console.log('📤 Sending request with headers:', {
-                Authorization: headers.Authorization ? 'Bearer ***' : 'missing',
-                'Content-Type': headers['Content-Type'] || 'none'
-            });
+            console.log('📤 Отправка запроса...');
 
             const response = await fetch(url, config);
 
-            console.log(`📥 Response status: ${response.status} ${response.statusText}`);
-            console.log('📥 Response headers:', Object.fromEntries(response.headers.entries()));
+            console.log(`📥 Ответ: ${response.status} ${response.statusText}`);
 
             if (response.status === 204) {
-                console.log('✅ 204 No Content - request successful');
+                console.log('✅ 204 No Content - запрос успешен');
                 return null;
             }
 
             const data = await response.json();
-            console.log('📥 Response data:', data);
+            console.log('📥 Данные ответа получены');
 
             if (!response.ok) {
-                throw new Error(data.detail || `HTTP error! status: ${response.status}`);
+                throw new Error(data.detail || `HTTP ошибка! статус: ${response.status}`);
             }
 
-            console.log('✅ Request successful');
+            console.log('✅ Запрос успешен');
             return data;
         } catch (error) {
-            console.error('❌ API Request failed:', error);
-            console.error('Error details:', {
-                name: error.name,
-                message: error.message,
-                stack: error.stack
-            });
+            console.error('❌ Ошибка API запроса:', error);
 
-            // Более информативное сообщение об ошибке
             if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
-                throw new Error('Не удалось подключиться к серверу. Проверьте подключение к интернету и CORS настройки.');
+                throw new Error('Не удалось подключиться к прокси-серверу. Убедитесь, что прокси запущен на localhost:3001');
             }
 
             throw error;
@@ -108,7 +99,7 @@ class ApiService {
         const formData = new FormData();
         formData.append('image', file);
 
-        console.log(`🔄 File upload: PUT ${url}`);
+        console.log(`🔄 Загрузка файла: PUT ${url}`);
 
         const response = await fetch(url, {
             method: 'PUT',
@@ -118,29 +109,24 @@ class ApiService {
             body: formData
         });
 
-        console.log(`📥 Upload response: ${response.status} ${response.statusText}`);
+        console.log(`📥 Ответ загрузки: ${response.status} ${response.statusText}`);
 
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            throw new Error(`HTTP ошибка! статус: ${response.status}`);
         }
 
         return response;
     }
 
-    // Метод для тестирования соединения без CORS
-    async testConnection() {
-        const testUrl = this.baseUrl.replace('/api/v1', '');
-        console.log(`🔍 Testing connection to: ${testUrl}`);
-
+    // Проверка здоровья прокси
+    async healthCheck() {
         try {
-            const response = await fetch(testUrl, {
-                method: 'HEAD',
-                mode: 'no-cors' // Пробуем без CORS
-            });
-            console.log('🔍 Server is reachable (no-cors mode)');
-            return true;
+            const response = await fetch('http://localhost:3001/health');
+            const data = await response.json();
+            console.log('🏥 Проверка здоровья прокси:', data);
+            return data.status === 'OK';
         } catch (error) {
-            console.error('🔍 Server is not reachable:', error);
+            console.error('❌ Прокси-сервер недоступен');
             return false;
         }
     }
