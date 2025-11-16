@@ -2,15 +2,16 @@
 class RestaurantAdmin {
     constructor() {
         this.currentPage = 'dashboard';
-        this.apiBaseUrl = 'http://tastyworld-pos.ru:1212/api/v1';
-        this.token = 'dd2813e334817761450af98ac20fe90b';
-        this.clientPoint = null;
+        this.token = 'dd2813e334817761450af98ac20fe90b'; // Токен по умолчанию
         this.init();
     }
 
     // Инициализация приложения
     init() {
         console.log('🚀 Restaurant Admin запущен!');
+
+        // Настраиваем API сервис
+        apiService.setToken(this.token);
 
         // Проверяем авторизацию
         this.checkAuth();
@@ -36,25 +37,41 @@ class RestaurantAdmin {
     }
 
     // Проверка авторизации
-    checkAuth() {
+    async checkAuth() {
         const savedToken = localStorage.getItem('restaurantToken');
         if (savedToken) {
             this.token = savedToken;
+            apiService.setToken(this.token);
         }
 
         if (this.token) {
-            document.body.classList.add('logged-in');
-            this.loadClientPointInfo();
-            this.loadPage(this.currentPage);
-            console.log('Токен найден:', this.token);
+            try {
+                const isValid = await authService.verifyToken(this.token);
+                if (isValid) {
+                    document.body.classList.add('logged-in');
+                    await authService.getClientPoint();
+                    this.loadPage(this.currentPage);
+                    console.log('Токен валиден');
+                } else {
+                    this.showLoginScreen();
+                }
+            } catch (error) {
+                console.error('Ошибка проверки токена:', error);
+                this.showLoginScreen();
+            }
         } else {
-            document.body.classList.remove('logged-in');
-            console.log('Токен не найден');
+            this.showLoginScreen();
         }
     }
 
+    // Показать экран входа
+    showLoginScreen() {
+        document.body.classList.remove('logged-in');
+        console.log('Требуется авторизация');
+    }
+
     // Вход в систему
-    login() {
+    async login() {
         const tokenInput = document.getElementById('authToken');
         const token = tokenInput.value.trim();
 
@@ -64,24 +81,24 @@ class RestaurantAdmin {
         }
 
         this.token = token;
-        localStorage.setItem('restaurantToken', token);
+        apiService.setToken(token);
 
-        this.testToken()
-            .then(success => {
-                if (success) {
-                    document.body.classList.add('logged-in');
-                    this.loadClientPointInfo();
-                    this.loadPage(this.currentPage);
-                } else {
-                    alert('Неверный токен доступа');
-                    localStorage.removeItem('restaurantToken');
-                    this.token = null;
-                }
-            })
-            .catch(error => {
-                console.error('Ошибка проверки токена:', error);
-                alert('Ошибка подключения к серверу');
-            });
+        try {
+            const isValid = await authService.verifyToken(token);
+            if (isValid) {
+                localStorage.setItem('restaurantToken', token);
+                document.body.classList.add('logged-in');
+                await authService.getClientPoint();
+                this.loadPage(this.currentPage);
+            } else {
+                alert('Неверный токен доступа');
+                localStorage.removeItem('restaurantToken');
+                this.token = null;
+            }
+        } catch (error) {
+            console.error('Ошибка входа:', error);
+            alert('Ошибка подключения к серверу');
+        }
     }
 
     // Выход из системы
@@ -89,93 +106,14 @@ class RestaurantAdmin {
         if (confirm('Вы уверены, что хотите выйти?')) {
             localStorage.removeItem('restaurantToken');
             this.token = null;
-            this.clientPoint = null;
+            authService.clientPoint = null;
+            authService.tokenInfo = null;
             document.body.classList.remove('logged-in');
             document.getElementById('authToken').value = '';
         }
     }
 
-    // Тестирование токена через API
-    async testToken() {
-        try {
-            const response = await this.apiRequest('/authorization_tokens/me', 'GET');
-            return true;
-        } catch (error) {
-            console.error('Ошибка проверки токена:', error);
-            return false;
-        }
-    }
-
-    // Загрузка информации о клиентской точке
-    async loadClientPointInfo() {
-        try {
-            const response = await this.apiRequest('/client_points/me', 'GET');
-            this.clientPoint = response;
-            document.getElementById('pageTitle').textContent = response.name;
-        } catch (error) {
-            console.error('Ошибка загрузки информации о точке:', error);
-        }
-    }
-
-    // Универсальный метод для API запросов
-    async apiRequest(endpoint, method = 'GET', data = null) {
-        const url = `${this.apiBaseUrl}${endpoint}`;
-        const headers = {
-            'Authorization': `Bearer ${this.token}`,
-            'Content-Type': 'application/json'
-        };
-
-        const config = {
-            method: method,
-            headers: headers
-        };
-
-        if (data && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
-            config.body = JSON.stringify(data);
-        }
-
-        try {
-            const response = await fetch(url, config);
-
-            if (response.status === 204) {
-                return null; // No content
-            }
-
-            const result = await response.json();
-
-            if (!response.ok) {
-                throw new Error(result.detail || `HTTP error! status: ${response.status}`);
-            }
-
-            return result;
-        } catch (error) {
-            console.error('API Error:', error);
-            throw error;
-        }
-    }
-
-    // Загрузка файла (для изображений)
-    async apiFileUpload(endpoint, file) {
-        const url = `${this.apiBaseUrl}${endpoint}`;
-        const formData = new FormData();
-        formData.append('image', file);
-
-        const response = await fetch(url, {
-            method: 'PUT',
-            headers: {
-                'Authorization': `Bearer ${this.token}`,
-            },
-            body: formData
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        return response;
-    }
-
-    // Настройка навигации (остается без изменений)
+    // Настройка навигации
     setupNavigation() {
         const navItems = document.querySelectorAll('.nav-item');
         navItems.forEach(item => {
@@ -207,6 +145,11 @@ class RestaurantAdmin {
         const mainContent = document.getElementById('mainContent');
         mainContent.innerHTML = '<div class="loading">Загрузка...</div>';
 
+        // Уничтожаем старые графики при переходе
+        if (page !== 'analytics') {
+            analyticsService.destroyCharts();
+        }
+
         setTimeout(() => {
             try {
                 switch(page) {
@@ -235,27 +178,26 @@ class RestaurantAdmin {
         }, 300);
     }
 
-    // Рендер главной страницы с реальными данными
+    // Рендер главной страницы
     async renderDashboard() {
         const mainContent = document.getElementById('mainContent');
+        const clientPoint = authService.getClientPointInfo();
 
         try {
-            // Получаем данные параллельно
-            const [products, categories, subscriptionDays, completedOrders] = await Promise.all([
-                this.apiRequest('/menu/products?only_active=true', 'GET').catch(() => []),
-                this.apiRequest('/menu/categories?only_active=true', 'GET').catch(() => []),
-                this.apiRequest('/client_points/me/subscription_days', 'GET').catch(() => ({ days: 0 })),
-                this.getTodayCompletedOrders()
+            // Получаем данные параллельно для скорости
+            const [products, categories, subscriptionDays, todayOrders] = await Promise.all([
+                menuService.getProducts(true).catch(() => []),
+                menuService.getCategories(true).catch(() => []),
+                authService.getSubscriptionDays(),
+                ordersService.getTodayOrders()
             ]);
 
-            const todayRevenue = completedOrders.reduce((sum, order) => {
-                return sum + (this.calculateOrderTotal(order) || 0);
-            }, 0);
+            const stats = ordersService.calculateOrdersStats(todayOrders);
 
             mainContent.innerHTML = `
                 <div class="welcome-card">
-                    <h2>Добро пожаловать, ${this.clientPoint?.name || 'Ресторан'}!</h2>
-                    <p>${this.clientPoint?.address || 'Панель управления'}</p>
+                    <h2>Добро пожаловать, ${clientPoint?.name || 'Ресторан'}!</h2>
+                    <p>${clientPoint?.address || 'Панель управления'}</p>
                     ${subscriptionDays.days > 0 ?
                         `<p style="color: var(--success); margin-top: 8px;">Подписка активна: ${subscriptionDays.days} дней</p>` :
                         '<p style="color: var(--error); margin-top: 8px;">Подписка не активна</p>'
@@ -264,11 +206,11 @@ class RestaurantAdmin {
 
                 <div class="stats-grid">
                     <div class="stat-card">
-                        <div class="stat-value">${completedOrders.length}</div>
+                        <div class="stat-value">${stats.totalOrders}</div>
                         <div class="stat-label">Заказов сегодня</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-value">${todayRevenue} ₽</div>
+                        <div class="stat-value">${stats.totalRevenue} ₽</div>
                         <div class="stat-label">Выручка сегодня</div>
                     </div>
                     <div class="stat-card">
@@ -318,40 +260,27 @@ class RestaurantAdmin {
         }
     }
 
-    // Получение завершенных заказов за сегодня
-    async getTodayCompletedOrders() {
-        const today = new Date();
-        const from = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
-
-        try {
-            const orders = await this.apiRequest(`/orders/completed?from=${from}`, 'GET');
-            return Array.isArray(orders) ? orders : [];
-        } catch (error) {
-            console.error('Ошибка загрузки заказов:', error);
-            return [];
-        }
-    }
-
-    // Расчет общей суммы заказа
-    calculateOrderTotal(order) {
-        // В реальном приложении нужно использовать /orders/{order_id}/total_amount
-        // Здесь упрощенный расчет для демонстрации
-        return order.total_amount || 0;
-    }
-
     // Рендер страницы меню
     async renderMenu() {
         const mainContent = document.getElementById('mainContent');
+
+        // Проверяем права доступа
+        const canWriteMenu = authService.hasAccess('MENU_WRITE');
+
         mainContent.innerHTML = `
             <div class="page-actions">
-                <button class="btn-primary" onclick="app.showAddProductModal()">
-                    <span>+</span>
-                    Добавить товар
-                </button>
-                <button class="btn-secondary" onclick="app.showAddCategoryModal()">
-                    <span>+</span>
-                    Добавить категорию
-                </button>
+                ${canWriteMenu ? `
+                    <button class="btn-primary" onclick="app.showAddProductModal()">
+                        <span>+</span>
+                        Добавить товар
+                    </button>
+                    <button class="btn-secondary" onclick="app.showAddCategoryModal()">
+                        <span>+</span>
+                        Добавить категорию
+                    </button>
+                ` : `
+                    <p style="color: var(--text-secondary);">Только просмотр (недостаточно прав)</p>
+                `}
             </div>
 
             <div class="products-section">
@@ -376,13 +305,14 @@ class RestaurantAdmin {
         }, 100);
     }
 
-    // Рендер товаров с реальными данными API
+    // Рендер товаров
     async renderProducts() {
         const container = document.getElementById('productsContainer');
         if (!container) return;
 
         try {
-            const products = await this.apiRequest('/menu/products', 'GET');
+            const products = await menuService.getProducts();
+            const canWriteMenu = authService.hasAccess('MENU_WRITE');
 
             if (!products || products.length === 0) {
                 container.innerHTML = `
@@ -390,9 +320,11 @@ class RestaurantAdmin {
                         <div class="empty-icon">🍽️</div>
                         <h3>Нет товаров</h3>
                         <p>Добавьте первый товар в меню</p>
-                        <button class="btn-primary" onclick="app.showAddProductModal()">
-                            Добавить товар
-                        </button>
+                        ${canWriteMenu ? `
+                            <button class="btn-primary" onclick="app.showAddProductModal()">
+                                Добавить товар
+                            </button>
+                        ` : ''}
                     </div>
                 `;
                 return;
@@ -403,11 +335,11 @@ class RestaurantAdmin {
                     <div class="product-info">
                         <div class="product-header">
                             <h4 class="product-name">${this.escapeHtml(product.name)}</h4>
-                            <div class="product-price">${this.formatPrice(product.unit_price, product.qty_measure)}</div>
+                            <div class="product-price">${menuService.formatPrice(product.unit_price, product.qty_measure)}</div>
                         </div>
 
                         <div class="product-meta">
-                            <span class="product-category">${this.getProductTypeText(product.type)}</span>
+                            <span class="product-category">${menuService.getProductTypeText(product.type)}</span>
                             <span class="product-unit ${product.is_active ? 'active' : 'inactive'}">
                                 ${product.is_active ? 'Активен' : 'Неактивен'}
                             </span>
@@ -415,18 +347,20 @@ class RestaurantAdmin {
 
                         <div class="product-details">
                             <small>Мин: ${product.qty_min} | Макс: ${product.qty_max} | По умолч: ${product.qty_default}</small>
-                            <small>НДС: ${this.getTaxText(product.tax)}</small>
+                            <small>НДС: ${menuService.getTaxText(product.tax)}</small>
                         </div>
                     </div>
 
-                    <div class="product-actions">
-                        <button class="btn-icon" onclick="app.editProduct(${product.product_id})" title="Редактировать">
-                            ✏️
-                        </button>
-                        <button class="btn-icon btn-danger" onclick="app.deleteProduct(${product.product_id})" title="Удалить">
-                            🗑️
-                        </button>
-                    </div>
+                    ${canWriteMenu ? `
+                        <div class="product-actions">
+                            <button class="btn-icon" onclick="app.editProduct(${product.product_id})" title="Редактировать">
+                                ✏️
+                            </button>
+                            <button class="btn-icon btn-danger" onclick="app.deleteProduct(${product.product_id})" title="Удалить">
+                                🗑️
+                            </button>
+                        </div>
+                    ` : ''}
                 </div>
             `).join('');
         } catch (error) {
@@ -435,13 +369,14 @@ class RestaurantAdmin {
         }
     }
 
-    // Рендер категорий с реальными данными API
+    // Рендер категорий
     async renderCategories() {
         const container = document.getElementById('categoriesContainer');
         if (!container) return;
 
         try {
-            const categories = await this.apiRequest('/menu/categories', 'GET');
+            const categories = await menuService.getCategories();
+            const canWriteMenu = authService.hasAccess('MENU_WRITE');
 
             if (!categories || categories.length === 0) {
                 container.innerHTML = `
@@ -464,49 +399,22 @@ class RestaurantAdmin {
                             </span>
                         </div>
                     </div>
-                    <div class="product-actions">
-                        <button class="btn-icon" onclick="app.editCategory(${category.menu_category_id})" title="Редактировать">
-                            ✏️
-                        </button>
-                        <button class="btn-icon btn-danger" onclick="app.deleteCategory(${category.menu_category_id})" title="Удалить">
-                            🗑️
-                        </button>
-                    </div>
+                    ${canWriteMenu ? `
+                        <div class="product-actions">
+                            <button class="btn-icon" onclick="app.editCategory(${category.menu_category_id})" title="Редактировать">
+                                ✏️
+                            </button>
+                            <button class="btn-icon btn-danger" onclick="app.deleteCategory(${category.menu_category_id})" title="Удалить">
+                                🗑️
+                            </button>
+                        </div>
+                    ` : ''}
                 </div>
             `).join('');
         } catch (error) {
             console.error('Ошибка загрузки категорий:', error);
             container.innerHTML = '<div class="error-state">Ошибка загрузки категорий</div>';
         }
-    }
-
-    // Форматирование цены
-    formatPrice(price, measure) {
-        if (measure === 'GRAMS') {
-            return `${(price * 1000).toFixed(2)} ₽/кг`; // Цена за кг для весовых товаров
-        }
-        return `${price.toFixed(2)} ₽`;
-    }
-
-    // Текст для типа товара
-    getProductTypeText(type) {
-        const types = {
-            'NORMAL': 'Обычный',
-            'WATER_MARKED': 'Вода (маркировка)',
-            'DAIRY_MARKED': 'Молочка (маркировка)',
-            'JUICE_MARKED': 'Сок (маркировка)',
-            'NOT_ALCOHOL_BEER_MARKED': 'Пиво безалкогольное (маркировка)'
-        };
-        return types[type] || type;
-    }
-
-    // Текст для налога
-    getTaxText(tax) {
-        const taxes = {
-            'NO_VAT': 'Без НДС',
-            'VAT_18': 'НДС 18%'
-        };
-        return taxes[tax] || tax;
     }
 
     // Рендер страницы аналитики
@@ -540,153 +448,85 @@ class RestaurantAdmin {
         this.renderAnalyticsContent(period);
     }
 
-    // Рендер контента аналитики с реальными данными
+    // Рендер контента аналитики
     async renderAnalyticsContent(period) {
         const container = document.getElementById('analyticsContent');
         if (!container) return;
 
         try {
-            const orders = await this.getOrdersByPeriod(period);
-            const analyticsData = this.calculateAnalytics(orders, period);
+            const orders = await ordersService.getOrdersByPeriod(period);
+            const stats = ordersService.calculateOrdersStats(orders);
 
             container.innerHTML = `
                 <div class="analytics-stats">
                     <div class="stat-card">
-                        <div class="stat-value">${analyticsData.totalRevenue} ₽</div>
-                        <div class="stat-label">Выручка за ${this.getPeriodText(period)}</div>
+                        <div class="stat-value">${stats.totalRevenue} ₽</div>
+                        <div class="stat-label">Выручка за ${analyticsService.getPeriodText(period)}</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-value">${analyticsData.totalOrders}</div>
-                        <div class="stat-label">Заказов за ${this.getPeriodText(period)}</div>
+                        <div class="stat-value">${stats.totalOrders}</div>
+                        <div class="stat-label">Заказов за ${analyticsService.getPeriodText(period)}</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-value">${analyticsData.averageOrder} ₽</div>
+                        <div class="stat-value">${stats.averageOrder} ₽</div>
                         <div class="stat-label">Средний чек</div>
+                    </div>
+                </div>
+
+                <div class="chart-section">
+                    <h4>Динамика выручки за ${analyticsService.getPeriodText(period)}</h4>
+                    <div class="chart-container">
+                        <canvas id="revenueChart"></canvas>
                     </div>
                 </div>
 
                 <div class="export-section">
                     <button class="btn-primary" onclick="app.exportData('${period}')">
-                        📊 Экспорт в Excel (${this.getPeriodText(period)})
+                        📊 Экспорт в Excel (${analyticsService.getPeriodText(period)})
                     </button>
                 </div>
             `;
+
+            // Инициализируем график
+            setTimeout(() => {
+                const ctx = document.getElementById('revenueChart');
+                if (ctx) {
+                    analyticsService.createRevenueChart(ctx, period);
+                }
+            }, 500);
+
         } catch (error) {
             console.error('Ошибка загрузки аналитики:', error);
             container.innerHTML = '<div class="error-state">Ошибка загрузки аналитики</div>';
         }
     }
 
-    // Получение заказов за период
-    async getOrdersByPeriod(period) {
-        const now = new Date();
-        let fromDate = new Date();
+    // ========== ФУНКЦИОНАЛ РАБОТЫ С ТОВАРАМИ ==========
 
-        switch(period) {
-            case 'day':
-                fromDate.setDate(now.getDate() - 1);
-                break;
-            case 'week':
-                fromDate.setDate(now.getDate() - 7);
-                break;
-            case 'month':
-                fromDate.setMonth(now.getMonth() - 1);
-                break;
-            default:
-                fromDate.setDate(now.getDate() - 1);
+    // Показать модальное окно добавления товара
+    showAddProductModal() {
+        if (!authService.hasAccess('MENU_WRITE')) {
+            alert('Недостаточно прав для добавления товаров');
+            return;
         }
-
-        try {
-            const orders = await this.apiRequest(
-                `/orders/completed?from=${fromDate.toISOString()}&till=${now.toISOString()}`,
-                'GET'
-            );
-            return Array.isArray(orders) ? orders : [];
-        } catch (error) {
-            console.error('Ошибка загрузки заказов:', error);
-            return [];
-        }
-    }
-
-    // Расчет аналитики
-    calculateAnalytics(orders, period) {
-        const totalRevenue = orders.reduce((sum, order) => sum + (this.calculateOrderTotal(order) || 0), 0);
-        const totalOrders = orders.length;
-        const averageOrder = totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0;
-
-        return {
-            period,
-            totalRevenue: Math.round(totalRevenue),
-            totalOrders,
-            averageOrder,
-            orders
-        };
-    }
-
-    // Текст для периода
-    getPeriodText(period) {
-        const texts = {
-            'day': 'день',
-            'week': 'неделю',
-            'month': 'месяц'
-        };
-        return texts[period] || 'период';
-    }
-
-    // Экспорт данных в Excel
-    async exportData(period = 'day') {
-        try {
-            const orders = await this.getOrdersByPeriod(period);
-            const products = await this.apiRequest('/menu/products', 'GET').catch(() => []);
-
-            // Создаем CSV содержимое (упрощенная версия)
-            let csvContent = "data:text/csv;charset=utf-8,";
-
-            // Заголовки для заказов
-            csvContent += "Отчет по заказам\r\n";
-            csvContent += "Период," + this.getPeriodText(period) + "\r\n";
-            csvContent += "ID заказа,Статус,Сумма,Дата создания,Оплачен\r\n";
-
-            orders.forEach(order => {
-                csvContent += `${order.order_id},${order.status},${this.calculateOrderTotal(order)},${order.draft_at},${order.is_paid ? 'Да' : 'Нет'}\r\n`;
-            });
-
-            csvContent += "\r\nТовары\r\n";
-            csvContent += "ID товара,Название,Цена,Тип,Активен\r\n";
-
-            products.forEach(product => {
-                csvContent += `${product.product_id},${product.name},${product.unit_price},${this.getProductTypeText(product.type)},${product.is_active ? 'Да' : 'Нет'}\r\n`;
-            });
-
-            // Создаем ссылку для скачивания
-            const encodedUri = encodeURI(csvContent);
-            const link = document.createElement("a");
-            link.setAttribute("href", encodedUri);
-            link.setAttribute("download", `report_${period}_${new Date().toISOString().split('T')[0]}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-
-        } catch (error) {
-            console.error('Ошибка экспорта:', error);
-            alert('Ошибка при экспорте данных: ' + error.message);
-        }
-    }
-
-    // Функции работы с товарами (реальные API вызовы)
-
-    async showAddProductModal() {
         this.openProductModal('add');
     }
 
+    // Редактировать товар
     async editProduct(productId) {
+        if (!authService.hasAccess('MENU_WRITE')) {
+            alert('Недостаточно прав для редактирования товаров');
+            return;
+        }
         this.openProductModal('edit', productId);
     }
 
+    // Открыть модальное окно товара
     async openProductModal(mode, productId = null) {
         const modal = document.getElementById('productModal');
         const title = document.getElementById('productModalTitle');
 
+        // Сброс формы
         document.getElementById('productForm').reset();
         document.getElementById('imageFileName').textContent = 'Файл не выбран';
 
@@ -698,15 +538,17 @@ class RestaurantAdmin {
             await this.loadProductForEdit(productId);
         }
 
+        // Заполняем селекты
         this.fillProductTypeSelect();
         this.fillTaxSelect();
 
         modal.style.display = 'flex';
     }
 
+    // Загрузить товар для редактирования
     async loadProductForEdit(productId) {
         try {
-            const product = await this.apiRequest(`/menu/products/${productId}`, 'GET');
+            const product = await menuService.getProduct(productId);
 
             document.getElementById('productId').value = product.product_id;
             document.getElementById('productName').value = product.name;
@@ -725,6 +567,7 @@ class RestaurantAdmin {
         }
     }
 
+    // Заполнить селект типа товара
     fillProductTypeSelect() {
         const typeSelect = document.getElementById('productType');
         const types = [
@@ -735,11 +578,11 @@ class RestaurantAdmin {
             { value: 'NOT_ALCOHOL_BEER_MARKED', text: 'Безалкогольное пиво (маркировка)' }
         ];
 
-        typeSelect.innerHTML = types.map(type =>
-            `<option value="${type.value}">${type.text}</option>`
-        ).join('');
+        typeSelect.innerHTML = '<option value="">Выберите тип</option>' +
+            types.map(type => `<option value="${type.value}">${type.text}</option>`).join('');
     }
 
+    // Заполнить селект налога
     fillTaxSelect() {
         const taxSelect = document.getElementById('productTax');
         const taxes = [
@@ -747,12 +590,17 @@ class RestaurantAdmin {
             { value: 'VAT_18', text: 'НДС 18%' }
         ];
 
-        taxSelect.innerHTML = taxes.map(tax =>
-            `<option value="${tax.value}">${tax.text}</option>`
-        ).join('');
+        taxSelect.innerHTML = '<option value="">Выберите НДС</option>' +
+            taxes.map(tax => `<option value="${tax.value}">${tax.text}</option>`).join('');
     }
 
+    // Сохранить товар
     async saveProduct() {
+        if (!authService.hasAccess('MENU_WRITE')) {
+            alert('Недостаточно прав для сохранения товаров');
+            return;
+        }
+
         const form = document.getElementById('productForm');
 
         if (!form.checkValidity()) {
@@ -779,15 +627,15 @@ class RestaurantAdmin {
             let savedProduct;
             if (productId) {
                 // Редактирование существующего товара
-                savedProduct = await this.apiRequest(`/menu/products/${productId}`, 'PATCH', productData);
+                savedProduct = await menuService.updateProduct(productId, productData);
             } else {
                 // Добавление нового товара
-                savedProduct = await this.apiRequest('/menu/products', 'POST', productData);
+                savedProduct = await menuService.createProduct(productData);
             }
 
             // Загрузка изображения если есть
             if (imageFile && savedProduct) {
-                await this.apiFileUpload(`/menu/products/${savedProduct.product_id}/image`, imageFile);
+                await menuService.uploadProductImage(savedProduct.product_id, imageFile);
             }
 
             this.closeProductModal();
@@ -800,13 +648,19 @@ class RestaurantAdmin {
         }
     }
 
+    // Удалить товар
     async deleteProduct(productId) {
+        if (!authService.hasAccess('MENU_WRITE')) {
+            alert('Недостаточно прав для удаления товаров');
+            return;
+        }
+
         if (!confirm('Вы уверены, что хотите удалить этот товар?')) {
             return;
         }
 
         try {
-            await this.apiRequest(`/menu/products/${productId}`, 'DELETE');
+            await menuService.deleteProduct(productId);
             this.loadPage('menu');
             alert('Товар успешно удален!');
         } catch (error) {
@@ -815,14 +669,36 @@ class RestaurantAdmin {
         }
     }
 
-    // Вспомогательные методы
+    // Закрыть модальное окно товара
+    closeProductModal() {
+        document.getElementById('productModal').style.display = 'none';
+    }
+
+    // ========== ФУНКЦИОНАЛ ЭКСПОРТА ==========
+
+    // Экспорт данных
+    async exportData(period = 'day') {
+        try {
+            const reportData = await analyticsService.createOrdersReport(period);
+            const filename = `report_${period}_${new Date().toISOString().split('T')[0]}.csv`;
+            analyticsService.exportToCSV(reportData, filename);
+        } catch (error) {
+            console.error('Ошибка экспорта:', error);
+            alert('Ошибка при экспорте данных: ' + error.message);
+        }
+    }
+
+    // ========== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ==========
+
+    // Экранирование HTML
     escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
     }
 
-    // Заглушки для будущего функционала
+    // ========== ЗАГЛУШКИ ДЛЯ БУДУЩЕГО ФУНКЦИОНАЛА ==========
+
     showAddCategoryModal() {
         alert('Добавление категорий будет реализовано в следующей версии');
     }
@@ -837,14 +713,6 @@ class RestaurantAdmin {
 
     showHelp() {
         alert('Раздел помощи будет реализован в следующей версии');
-    }
-
-    closeProductModal() {
-        document.getElementById('productModal').style.display = 'none';
-    }
-
-    onUnitChange() {
-        // Оставлено для совместимости
     }
 }
 
