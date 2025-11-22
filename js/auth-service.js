@@ -5,7 +5,7 @@ class AuthService {
         this.tokenInfo = null;
     }
 
-    // Проверка токена с диагностикой
+    // Проверка токена с детальной диагностикой прав
     async verifyToken(token) {
         console.log('🔐 Starting token verification...');
 
@@ -21,39 +21,49 @@ class AuthService {
                 access_modules: this.tokenInfo.access_modules
             });
 
+            // Детальная диагностика прав
+            this.checkAccessRights();
+
             return true;
         } catch (error) {
             console.error('❌ Token verification failed:', error);
 
-            // Пробуем альтернативные endpoints для диагностики
-            await this.testAlternativeEndpoints(token);
+            // Логируем ошибку
+            if (window.errorLogger) {
+                window.errorLogger.manualLog(error);
+            }
+
             return false;
         }
     }
 
-    // Тестирование альтернативных endpoints для диагностики
-    async testAlternativeEndpoints(token) {
-        console.log('🔍 Testing alternative endpoints...');
-
-        const endpoints = [
-            '/client_points/me',
-            '/client_points/me/subscription_days',
-            '/menu/products'
-        ];
-
-        for (const endpoint of endpoints) {
-            try {
-                console.log(`🔍 Testing ${endpoint}...`);
-                const result = await apiService.get(endpoint);
-                console.log(`✅ ${endpoint}: SUCCESS`, result ? 'Data received' : 'No data');
-                return true; // Если хоть один endpoint работает
-            } catch (error) {
-                console.log(`❌ ${endpoint}: FAILED -`, error.message);
-            }
+    // Проверка конкретных прав доступа
+    checkAccessRights() {
+        if (!this.tokenInfo || !this.tokenInfo.access_modules) {
+            console.error('❌ No access modules information available');
+            return;
         }
 
-        console.log('🔍 All endpoints failed - likely CORS or server issue');
-        return false;
+        const requiredModules = {
+            'MENU_READ': 'Чтение меню',
+            'MENU_WRITE': 'Запись в меню',
+            'ORDER_READ': 'Чтение заказов',
+            'ORDER_CREATE': 'Создание заказов'
+        };
+
+        console.log('🔐 Проверка прав доступа:');
+        console.log('📋 Доступные права:', this.tokenInfo.access_modules);
+
+        Object.entries(requiredModules).forEach(([module, description]) => {
+            const hasAccess = this.hasAccess(module);
+            console.log(`   ${hasAccess ? '✅' : '❌'} ${description}: ${hasAccess ? 'ЕСТЬ' : 'НЕТ'}`);
+        });
+
+        // Предупреждения о недостающих правах
+        const missing = Object.keys(requiredModules).filter(module => !this.hasAccess(module));
+        if (missing.length > 0) {
+            console.warn('⚠️ Отсутствуют важные права:', missing.join(', '));
+        }
     }
 
     // Получение информации о клиентской точке
@@ -68,6 +78,12 @@ class AuthService {
             return this.clientPoint;
         } catch (error) {
             console.error('❌ Failed to get client point:', error);
+
+            // Логируем ошибку
+            if (window.errorLogger) {
+                window.errorLogger.manualLog(error);
+            }
+
             throw error;
         }
     }
@@ -81,6 +97,12 @@ class AuthService {
             return result;
         } catch (error) {
             console.error('❌ Failed to get subscription days:', error);
+
+            // Логируем ошибку
+            if (window.errorLogger) {
+                window.errorLogger.manualLog(error);
+            }
+
             return { days: 0 };
         }
     }
@@ -93,7 +115,6 @@ class AuthService {
         }
 
         const hasAccess = this.tokenInfo.access_modules.includes(module);
-        console.log(`🔐 Access check for ${module}: ${hasAccess ? 'GRANTED' : 'DENIED'}`);
         return hasAccess;
     }
 
@@ -105,6 +126,11 @@ class AuthService {
     // Получение информации о клиентской точке
     getClientPointInfo() {
         return this.clientPoint;
+    }
+
+    // Получение списка доступных прав
+    getAvailableModules() {
+        return this.tokenInfo ? this.tokenInfo.access_modules : [];
     }
 }
 

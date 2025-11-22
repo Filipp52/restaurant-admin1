@@ -1,10 +1,11 @@
 // Базовый Service Worker для PWA
-const CACHE_NAME = 'restaurant-admin-v2';
+const CACHE_NAME = 'restaurant-admin-v3';
 const urlsToCache = [
   '/',
   '/index.html',
   '/css/style.css',
   '/js/api-service.js',
+  '/js/error-logger.js',
   '/js/auth-service.js',
   '/js/menu-service.js',
   '/js/orders-service.js',

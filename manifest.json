@@ -1,6 +1,6 @@
 {
-  "name": "Чайхана Восточная кухня",
-  "short_name": "Чайхана",
+  "name": "Панель управления TastyWorld",
+  "short_name": "TastyWorld",
   "description": "Панель управления рестораном TastyWorld",
   "start_url": "/",
   "display": "standalone",
@@ -20,20 +20,6 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
-    }
-  ],
-  "screenshots": [
-    {
-      "src": "images/screenshot-wide.png",
-      "sizes": "1280x720",
-      "type": "image/png",
-      "form_factor": "wide"
-    },
-    {
-      "src": "images/screenshot-narrow.png",
-      "sizes": "375x667",
-      "type": "image/png",
-      "form_factor": "narrow"
     }
   ]
 }

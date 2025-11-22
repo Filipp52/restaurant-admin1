@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Чайхана Восточная кухня</title>
+    <title>Панель управления - TastyWorld</title>
 
     <!-- PWA настройки -->
     <link rel="manifest" href="manifest.json">
@@ -16,13 +16,17 @@
 
     <!-- Chart.js для графиков -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Flatpickr для выбора дат -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/ru.js"></script>
 </head>
 <body>
     <!-- Экран входа -->
     <div id="loginScreen" class="login-screen">
         <div class="login-container">
             <div class="login-card">
-                <h2>Чайхана Восточная кухня</h2>
+                <h2>Панель управления TastyWorld</h2>
                 <p>Введите ваш токен для доступа</p>
                 <input type="text" id="authToken" placeholder="Введите токен доступа" class="token-input">
                 <button onclick="app.login()" class="btn-primary login-btn">Войти</button>
@@ -35,29 +39,31 @@
 
     <!-- Верхняя навигационная панель -->
     <header class="nav-bar">
-        <div class="nav-title" id="pageTitle">Чайхана Восточная кухня</div>
-        <button class="logout-btn" onclick="app.logout()">Выйти</button>
+        <div class="nav-header" id="navHeader">
+            <div class="header-main">
+                <h1 id="pageTitle">Аналитика</h1>
+                <div class="header-subtitle" id="headerSubtitle">
+                    <!-- Здесь будет подзаголовок с информацией о заведении -->
+                </div>
+            </div>
+            <button class="logout-btn" onclick="app.logout()">Выйти</button>
+        </div>
     </header>
 
     <!-- Основное содержимое -->
     <main class="main-content" id="mainContent">
-        <!-- Контент будет подгружаться динамически -->
         <div class="loading">Загрузка...</div>
     </main>
 
     <!-- Нижняя навигация -->
     <nav class="bottom-nav">
-        <a href="#dashboard" class="nav-item active" data-page="dashboard">
+        <a href="#analytics" class="nav-item active" data-page="analytics">
             <div class="nav-icon">📊</div>
-            <div>Главная</div>
+            <div>Аналитика</div>
         </a>
         <a href="#menu" class="nav-item" data-page="menu">
             <div class="nav-icon">🍽️</div>
             <div>Меню</div>
-        </a>
-        <a href="#analytics" class="nav-item" data-page="analytics">
-            <div class="nav-icon">📈</div>
-            <div>Аналитика</div>
         </a>
     </nav>
 
@@ -82,13 +88,13 @@
                     <div class="form-row">
                         <div class="form-group">
                             <label class="form-label">Тип товара *</label>
-                            <select id="productType" class="form-input" required>
+                            <select id="productType" class="form-input" required onchange="app.onProductTypeChange()">
                                 <option value="">Выберите тип</option>
                             </select>
                         </div>
                         <div class="form-group">
                             <label class="form-label">Единица измерения *</label>
-                            <select id="productMeasure" class="form-input" required>
+                            <select id="productMeasure" class="form-input" required onchange="app.onMeasureChange()">
                                 <option value="PIECES">Штуки</option>
                                 <option value="GRAMS">Граммы</option>
                             </select>
@@ -97,7 +103,7 @@
 
                     <div class="form-row">
                         <div class="form-group">
-                            <label class="form-label">Цена *</label>
+                            <label class="form-label" id="priceLabel">Цена *</label>
                             <input type="number" id="productPrice" class="form-input" step="0.01" min="0" required>
                         </div>
                         <div class="form-group">
@@ -152,8 +158,41 @@
         </div>
     </div>
 
+    <!-- Модальное окно добавления/редактирования категории -->
+    <div id="categoryModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="categoryModalTitle">Добавить категорию</h3>
+                <button class="close-btn" onclick="app.closeCategoryModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="categoryForm">
+                    <input type="hidden" id="categoryId">
+
+                    <div class="form-group">
+                        <label class="form-label">Название категории *</label>
+                        <input type="text" id="categoryName" class="form-input" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Статус</label>
+                        <div style="margin-top: 8px;">
+                            <input type="checkbox" id="categoryActive" checked>
+                            <label for="categoryActive" style="margin-left: 8px;">Активная</label>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="app.closeCategoryModal()">Отмена</button>
+                <button class="btn-primary" onclick="app.saveCategory()">Сохранить категорию</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Подключаем JavaScript модули -->
     <script src="js/api-service.js"></script>
+    <script src="js/error-logger.js"></script>
     <script src="js/auth-service.js"></script>
     <script src="js/menu-service.js"></script>
     <script src="js/orders-service.js"></script>
@@ -165,6 +204,11 @@
         document.getElementById('productImage').addEventListener('change', function(e) {
             const fileName = e.target.files[0] ? e.target.files[0].name : 'Файл не выбран';
             document.getElementById('imageFileName').textContent = fileName;
+        });
+
+        // Инициализация error logger после загрузки
+        window.addEventListener('load', () => {
+            errorLogger.init();
         });
     </script>
 </body>

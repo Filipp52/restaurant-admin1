@@ -1,43 +1,39 @@
-// Сервис аналитики и отчетов
+// Сервис аналитики и отчетов с реальными данными и улучшенным функционалом
 class AnalyticsService {
     constructor() {
         this.charts = new Map();
+        this.datePicker = null;
     }
 
-    // Создание графика выручки
-    createRevenueChart(ctx, period, data) {
+    // Инициализация календаря для выбора периода
+    initDateRangePicker(onDateSelect) {
+        try {
+            this.datePicker = flatpickr("#customDateRange", {
+                mode: "range",
+                locale: "ru",
+                dateFormat: "d.m.Y",
+                maxDate: "today",
+                onChange: function(selectedDates, dateStr, instance) {
+                    if (selectedDates.length === 2) {
+                        onDateSelect(selectedDates[0], selectedDates[1]);
+                    }
+                }
+            });
+        } catch (error) {
+            console.error('Flatpickr initialization error:', error);
+            errorLogger.manualLog(error);
+        }
+    }
+
+    // Создание графика выручки на основе реальных данных
+    createRevenueChart(ctx, period, orders) {
         if (this.charts.has(ctx)) {
             this.charts.get(ctx).destroy();
         }
 
-        let chartData;
-        switch(period) {
-            case 'day':
-                chartData = {
-                    labels: ['9:00', '12:00', '15:00', '18:00', '21:00'],
-                    data: data || [5000, 15000, 8000, 22000, 12000]
-                };
-                break;
-            case 'week':
-                chartData = {
-                    labels: ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'],
-                    data: data || [12000, 15000, 18000, 22000, 25000, 35000, 28000]
-                };
-                break;
-            case 'month':
-                chartData = {
-                    labels: ['Нед1', 'Нед2', 'Нед3', 'Нед4'],
-                    data: data || [80000, 95000, 110000, 125000]
-                };
-                break;
-            default:
-                chartData = {
-                    labels: ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'],
-                    data: data || [12000, 15000, 18000, 22000, 25000, 35000, 28000]
-                };
-        }
-
         try {
+            const chartData = this.prepareChartData(period, orders);
+
             const chart = new Chart(ctx, {
                 type: 'line',
                 data: {
@@ -57,6 +53,13 @@ class AnalyticsService {
                     plugins: {
                         legend: {
                             display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `Выручка: ${context.parsed.y.toLocaleString('ru-RU')} ₽`;
+                                }
+                            }
                         }
                     },
                     scales: {
@@ -84,86 +87,253 @@ class AnalyticsService {
             return chart;
         } catch (error) {
             console.error('Error creating chart:', error);
+            errorLogger.manualLog(error);
             return null;
         }
     }
 
-    // Экспорт данных в CSV/Excel
-    exportToCSV(data, filename) {
-        let csvContent = "data:text/csv;charset=utf-8,";
+    // Подготовка данных для графика на основе реальных заказов
+    prepareChartData(period, orders) {
+        const now = new Date();
+        let labels = [];
+        let data = [];
 
-        // Добавляем данные
-        data.forEach(row => {
-            csvContent += row.join(",") + "\r\n";
-        });
+        switch(period) {
+            case 'day':
+                // Группировка по часам за сегодня
+                labels = this.generateDayLabels();
+                data = this.groupOrdersByHour(orders, now);
+                break;
 
-        // Создаем ссылку для скачивания
-        const encodedUri = encodeURI(csvContent);
-        const link = document.createElement("a");
-        link.setAttribute("href", encodedUri);
-        link.setAttribute("download", filename);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+            case 'week':
+                // Группировка по дням недели
+                labels = this.generateWeekLabels();
+                data = this.groupOrdersByDay(orders, 7);
+                break;
+
+            case 'month':
+                // Группировка по неделям месяца
+                labels = this.generateMonthLabels();
+                data = this.groupOrdersByWeek(orders, now);
+                break;
+
+            case 'custom':
+                // Для кастомного периода группируем по дням
+                if (orders.length > 0) {
+                    const dateRange = this.getDateRangeFromOrders(orders);
+                    labels = this.generateDateRangeLabels(dateRange.start, dateRange.end);
+                    data = this.groupOrdersByDateRange(orders, dateRange.start, dateRange.end);
+                } else {
+                    labels = ['Нет данных'];
+                    data = [0];
+                }
+                break;
+
+            default:
+                labels = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+                data = [0, 0, 0, 0, 0, 0, 0];
+        }
+
+        return { labels, data };
     }
 
-    // Создание отчета по заказам
-    async createOrdersReport(period) {
+    // Генерация меток для дня
+    generateDayLabels() {
+        const labels = [];
+        for (let i = 9; i <= 21; i++) {
+            labels.push(`${i}:00`);
+        }
+        return labels;
+    }
+
+    // Генерация меток для недели
+    generateWeekLabels() {
+        return ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+    }
+
+    // Генерация меток для месяца
+    generateMonthLabels() {
+        const weeks = [];
+        const now = new Date();
+        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+        const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+        let currentWeek = 1;
+        for (let d = new Date(firstDay); d <= lastDay; d.setDate(d.getDate() + 7)) {
+            weeks.push(`Неделя ${currentWeek}`);
+            currentWeek++;
+        }
+
+        return weeks.length > 0 ? weeks : ['Неделя 1'];
+    }
+
+    // Генерация меток для кастомного периода
+    generateDateRangeLabels(startDate, endDate) {
+        const labels = [];
+        const current = new Date(startDate);
+
+        while (current <= endDate) {
+            labels.push(current.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }));
+            current.setDate(current.getDate() + 1);
+        }
+
+        return labels;
+    }
+
+    // Группировка заказов по часам
+    groupOrdersByHour(orders, date) {
+        const data = new Array(13).fill(0); // 9:00 - 21:00
+
+        orders.forEach(order => {
+            const orderDate = new Date(order.draft_at || order.completed_at);
+            if (orderDate.toDateString() === date.toDateString()) {
+                const hour = orderDate.getHours();
+                if (hour >= 9 && hour <= 21) {
+                    data[hour - 9] += order.total_amount || 0;
+                }
+            }
+        });
+
+        return data;
+    }
+
+    // Группировка заказов по дням
+    groupOrdersByDay(orders, daysCount) {
+        const data = new Array(daysCount).fill(0);
+        const today = new Date();
+
+        orders.forEach(order => {
+            const orderDate = new Date(order.draft_at || order.completed_at);
+            const dayDiff = Math.floor((today - orderDate) / (1000 * 60 * 60 * 24));
+
+            if (dayDiff >= 0 && dayDiff < daysCount) {
+                data[daysCount - 1 - dayDiff] += order.total_amount || 0;
+            }
+        });
+
+        return data;
+    }
+
+    // Группировка заказов по неделям
+    groupOrdersByWeek(orders, date) {
+        const firstDay = new Date(date.getFullYear(), date.getMonth(), 1);
+        const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+        const weekCount = Math.ceil((lastDay.getDate() - firstDay.getDate() + 1) / 7);
+        const data = new Array(weekCount).fill(0);
+
+        orders.forEach(order => {
+            const orderDate = new Date(order.draft_at || order.completed_at);
+            if (orderDate.getMonth() === date.getMonth() && orderDate.getFullYear() === date.getFullYear()) {
+                const week = Math.floor((orderDate.getDate() - 1) / 7);
+                if (week < weekCount) {
+                    data[week] += order.total_amount || 0;
+                }
+            }
+        });
+
+        return data;
+    }
+
+    // Группировка заказов по диапазону дат
+    groupOrdersByDateRange(orders, startDate, endDate) {
+        const days = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+        const data = new Array(days).fill(0);
+
+        orders.forEach(order => {
+            const orderDate = new Date(order.draft_at || order.completed_at);
+            const dayIndex = Math.floor((orderDate - startDate) / (1000 * 60 * 60 * 24));
+
+            if (dayIndex >= 0 && dayIndex < days) {
+                data[dayIndex] += order.total_amount || 0;
+            }
+        });
+
+        return data;
+    }
+
+    // Получение диапазона дат из заказов
+    getDateRangeFromOrders(orders) {
+        if (orders.length === 0) {
+            const today = new Date();
+            return { start: today, end: today };
+        }
+
+        let minDate = new Date(orders[0].draft_at || orders[0].completed_at);
+        let maxDate = new Date(orders[0].draft_at || orders[0].completed_at);
+
+        orders.forEach(order => {
+            const orderDate = new Date(order.draft_at || order.completed_at);
+            if (orderDate < minDate) minDate = orderDate;
+            if (orderDate > maxDate) maxDate = orderDate;
+        });
+
+        return { start: minDate, end: maxDate };
+    }
+
+    // Экспорт данных
+    async exportData(period, fromDate = null, toDate = null) {
         try {
-            const orders = await ordersService.getOrdersByPeriod(period);
-            const products = await menuService.getProducts(true);
+            let orders = [];
 
-            const reportData = [
-                ["Отчет по заказам"],
-                ["Период", this.getPeriodText(period)],
-                ["Дата формирования", new Date().toLocaleDateString('ru-RU')],
-                [""],
-                ["ЗАКАЗЫ"],
-                ["ID заказа", "Статус", "Сумма", "Дата создания", "Оплачен", "Дата завершения"]
-            ];
+            if (period === 'custom' && fromDate && toDate) {
+                orders = await ordersService.getOrdersByCustomPeriod(fromDate, toDate);
+            } else {
+                orders = await ordersService.getOrdersByPeriod(period);
+            }
 
-            // Данные заказов
-            orders.forEach(order => {
-                reportData.push([
-                    order.order_id,
-                    this.getOrderStatusText(order.status),
-                    order.total_amount || 0,
-                    new Date(order.draft_at).toLocaleDateString('ru-RU'),
-                    order.is_paid ? 'Да' : 'Нет',
-                    order.completed_at ? new Date(order.completed_at).toLocaleDateString('ru-RU') : '-'
-                ]);
-            });
+            const exportData = await ordersService.getExportData(orders);
+            const csvContent = ordersService.generateCSVContent(exportData);
 
-            reportData.push([""]);
-            reportData.push(["ТОВАРЫ"]);
-            reportData.push(["ID товара", "Название", "Цена", "Тип", "Активен"]);
+            const filename = this.generateExportFilename(period, fromDate, toDate);
+            this.downloadCSV(csvContent, filename);
 
-            // Данные товаров
-            products.forEach(product => {
-                reportData.push([
-                    product.product_id,
-                    product.name,
-                    product.unit_price,
-                    menuService.getProductTypeText(product.type),
-                    product.is_active ? 'Да' : 'Нет'
-                ]);
-            });
+            console.log(`✅ Экспортировано ${orders.length} заказов`);
 
-            return reportData;
         } catch (error) {
-            console.error('Error creating report:', error);
+            console.error('Error during export:', error);
+            errorLogger.manualLog(error);
             throw error;
+        }
+    }
+
+    // Генерация имени файла для экспорта
+    generateExportFilename(period, fromDate, toDate) {
+        const now = new Date().toISOString().split('T')[0];
+
+        if (period === 'custom' && fromDate && toDate) {
+            const fromStr = fromDate.toISOString().split('T')[0];
+            const toStr = toDate.toISOString().split('T')[0];
+            return `export_${fromStr}_to_${toStr}.csv`;
+        } else {
+            return `export_${period}_${now}.csv`;
+        }
+    }
+
+    // Скачивание CSV файла
+    downloadCSV(csvContent, filename) {
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+
+        if (link.download !== undefined) {
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", filename);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         }
     }
 
     // Получение текста для периода
     getPeriodText(period) {
         const texts = {
-            'day': 'День',
-            'week': 'Неделя',
-            'month': 'Месяц'
+            'day': 'день',
+            'week': 'неделю',
+            'month': 'месяц',
+            'custom': 'выбранный период'
         };
-        return texts[period] || 'Период';
+        return texts[period] || 'период';
     }
 
     // Получение текста для статуса заказа
@@ -181,9 +351,22 @@ class AnalyticsService {
     // Очистка графиков
     destroyCharts() {
         this.charts.forEach(chart => {
-            chart.destroy();
+            try {
+                chart.destroy();
+            } catch (error) {
+                console.warn('Error destroying chart:', error);
+            }
         });
         this.charts.clear();
+
+        if (this.datePicker && typeof this.datePicker.destroy === 'function') {
+            try {
+                this.datePicker.destroy();
+            } catch (error) {
+                console.warn('Error destroying date picker:', error);
+            }
+            this.datePicker = null;
+        }
     }
 }
 

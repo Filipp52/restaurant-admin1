@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const { createProxyMiddleware } = require('http-proxy-middleware');
+const path = require('path');
 
 const app = express();
 const PORT = 3001;
@@ -12,6 +13,9 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Authorization', 'Content-Type', 'Accept']
 }));
+
+// Раздаем статические файлы
+app.use(express.static('.'));
 
 // Логирование всех запросов
 app.use((req, res, next) => {

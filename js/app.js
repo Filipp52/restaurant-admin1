@@ -1,8 +1,8 @@
 // Основное приложение - управление навигацией и состоянием
 class RestaurantAdmin {
     constructor() {
-        this.currentPage = 'dashboard';
-        this.token = 'dd2813e334817761450af98ac20fe90b'; // Токен по умолчанию
+        this.currentPage = 'analytics'; // Стартовая страница теперь аналитика
+        this.token = 'dd2813e334817761450af98ac20fe90b';
         this.init();
     }
 
@@ -32,6 +32,7 @@ class RestaurantAdmin {
                 })
                 .catch(error => {
                     console.log('Ошибка регистрации Service Worker:', error);
+                    errorLogger.manualLog(error);
                 });
         }
     }
@@ -50,6 +51,8 @@ class RestaurantAdmin {
                 if (isValid) {
                     document.body.classList.add('logged-in');
                     await authService.getClientPoint();
+                    this.updateHeaderInfo();
+                    this.updateNavigationBasedOnPermissions();
                     this.loadPage(this.currentPage);
                     console.log('Токен валиден');
                 } else {
@@ -57,10 +60,87 @@ class RestaurantAdmin {
                 }
             } catch (error) {
                 console.error('Ошибка проверки токена:', error);
+                errorLogger.manualLog(error);
                 this.showLoginScreen();
             }
         } else {
             this.showLoginScreen();
+        }
+    }
+
+    // Обновление информации в заголовке
+    updateHeaderInfo() {
+        const clientPoint = authService.getClientPointInfo();
+        const pageTitle = document.getElementById('pageTitle');
+        const headerSubtitle = document.getElementById('headerSubtitle');
+
+        if (this.currentPage === 'analytics') {
+            pageTitle.textContent = 'Аналитика';
+            if (clientPoint) {
+                headerSubtitle.innerHTML = `
+                    <div class="header-info">
+                        <div class="welcome-text">Добро пожаловать, ${clientPoint.name}!</div>
+                        <div class="address">${clientPoint.address}</div>
+                    </div>
+                `;
+            }
+        } else if (this.currentPage === 'menu') {
+            pageTitle.textContent = 'Управление меню';
+            headerSubtitle.innerHTML = '';
+        }
+    }
+
+    // Обновление подписки в заголовке
+    async updateSubscriptionInHeader() {
+        try {
+            const subscriptionDays = await authService.getSubscriptionDays();
+            const headerSubtitle = document.getElementById('headerSubtitle');
+            const existingSubscription = headerSubtitle.querySelector('.subscription-info');
+
+            const subscriptionHtml = `
+                <div class="subscription-info ${subscriptionDays.days > 0 ? 'active' : 'inactive'}">
+                    ${subscriptionDays.days > 0 ?
+                        `Подписка активна: ${subscriptionDays.days} дней` :
+                        'Подписка не активна'
+                    }
+                </div>
+            `;
+
+            if (existingSubscription) {
+                existingSubscription.outerHTML = subscriptionHtml;
+            } else {
+                headerSubtitle.innerHTML += subscriptionHtml;
+            }
+        } catch (error) {
+            console.error('Ошибка обновления подписки:', error);
+            errorLogger.manualLog(error);
+        }
+    }
+
+    // Обновление навигации на основе прав доступа
+    updateNavigationBasedOnPermissions() {
+        const menuNavItem = document.querySelector('[data-page="menu"]');
+        const analyticsNavItem = document.querySelector('[data-page="analytics"]');
+
+        // Скрываем пункты меню, если нет соответствующих прав
+        if (menuNavItem) {
+            const canAccessMenu = authService.hasAccess('MENU_READ') || authService.hasAccess('MENU_WRITE');
+            menuNavItem.style.display = canAccessMenu ? 'flex' : 'none';
+        }
+
+        if (analyticsNavItem) {
+            const canAccessAnalytics = authService.hasAccess('ORDER_READ');
+            analyticsNavItem.style.display = canAccessAnalytics ? 'flex' : 'none';
+        }
+
+        // Если текущая страница недоступна, переходим на доступную
+        if (this.currentPage === 'menu' && !authService.hasAccess('MENU_READ') && !authService.hasAccess('MENU_WRITE')) {
+            this.navigateTo('analytics');
+        }
+        if (this.currentPage === 'analytics' && !authService.hasAccess('ORDER_READ')) {
+            if (authService.hasAccess('MENU_READ') || authService.hasAccess('MENU_WRITE')) {
+                this.navigateTo('menu');
+            }
         }
     }
 
@@ -89,6 +169,8 @@ class RestaurantAdmin {
                 localStorage.setItem('restaurantToken', token);
                 document.body.classList.add('logged-in');
                 await authService.getClientPoint();
+                this.updateHeaderInfo();
+                this.updateNavigationBasedOnPermissions();
                 this.loadPage(this.currentPage);
             } else {
                 alert('Неверный токен доступа');
@@ -97,6 +179,7 @@ class RestaurantAdmin {
             }
         } catch (error) {
             console.error('Ошибка входа:', error);
+            errorLogger.manualLog(error);
             alert('Ошибка подключения к серверу');
         }
     }
@@ -129,6 +212,17 @@ class RestaurantAdmin {
 
     // Навигация на страницу
     navigateTo(page) {
+        // Проверяем права доступа перед переходом
+        if (page === 'menu' && !authService.hasAccess('MENU_READ') && !authService.hasAccess('MENU_WRITE')) {
+            alert('У вас нет прав для доступа к разделу меню');
+            return;
+        }
+
+        if (page === 'analytics' && !authService.hasAccess('ORDER_READ')) {
+            alert('У вас нет прав для доступа к разделу аналитики');
+            return;
+        }
+
         document.querySelectorAll('.nav-item').forEach(item => {
             item.classList.remove('active');
             if (item.getAttribute('data-page') === page) {
@@ -137,6 +231,7 @@ class RestaurantAdmin {
         });
 
         this.currentPage = page;
+        this.updateHeaderInfo();
         this.loadPage(page);
     }
 
@@ -153,20 +248,18 @@ class RestaurantAdmin {
         setTimeout(() => {
             try {
                 switch(page) {
-                    case 'dashboard':
-                        this.renderDashboard();
+                    case 'analytics':
+                        this.renderAnalytics();
                         break;
                     case 'menu':
                         this.renderMenu();
                         break;
-                    case 'analytics':
-                        this.renderAnalytics();
-                        break;
                     default:
-                        this.renderDashboard();
+                        this.renderAnalytics();
                 }
             } catch (error) {
                 console.error('Ошибка при загрузке страницы:', error);
+                errorLogger.manualLog(error);
                 mainContent.innerHTML = `
                     <div class="error-state">
                         <h3>Произошла ошибка</h3>
@@ -178,254 +271,38 @@ class RestaurantAdmin {
         }, 300);
     }
 
-    // Рендер главной страницы
-    async renderDashboard() {
-        const mainContent = document.getElementById('mainContent');
-        const clientPoint = authService.getClientPointInfo();
-
-        try {
-            // Получаем данные параллельно для скорости
-            const [products, categories, subscriptionDays, todayOrders] = await Promise.all([
-                menuService.getProducts(true).catch(() => []),
-                menuService.getCategories(true).catch(() => []),
-                authService.getSubscriptionDays(),
-                ordersService.getTodayOrders()
-            ]);
-
-            const stats = ordersService.calculateOrdersStats(todayOrders);
-
-            mainContent.innerHTML = `
-                <div class="welcome-card">
-                    <h2>Добро пожаловать, ${clientPoint?.name || 'Ресторан'}!</h2>
-                    <p>${clientPoint?.address || 'Панель управления'}</p>
-                    ${subscriptionDays.days > 0 ?
-                        `<p style="color: var(--success); margin-top: 8px;">Подписка активна: ${subscriptionDays.days} дней</p>` :
-                        '<p style="color: var(--error); margin-top: 8px;">Подписка не активна</p>'
-                    }
-                </div>
-
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-value">${stats.totalOrders}</div>
-                        <div class="stat-label">Заказов сегодня</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value">${stats.totalRevenue} ₽</div>
-                        <div class="stat-label">Выручка сегодня</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value">${products.length}</div>
-                        <div class="stat-label">Активных товаров</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-value">${categories.length}</div>
-                        <div class="stat-label">Активных категорий</div>
-                    </div>
-                </div>
-
-                <div class="quick-actions">
-                    <h3>Быстрые действия</h3>
-                    <div class="actions-grid">
-                        <button class="action-btn" onclick="app.navigateTo('menu')">
-                            <span>🍽️</span>
-                            <span>Управление меню</span>
-                            <small>Добавление и редактирование товаров</small>
-                        </button>
-                        <button class="action-btn" onclick="app.navigateTo('analytics')">
-                            <span>📈</span>
-                            <span>Просмотр аналитики</span>
-                            <small>Статистика и отчеты по продажам</small>
-                        </button>
-                        <button class="action-btn" onclick="app.exportData()">
-                            <span>📊</span>
-                            <span>Экспорт данных</span>
-                            <small>Выгрузка в Excel</small>
-                        </button>
-                        <button class="action-btn" onclick="app.showHelp()">
-                            <span>❓</span>
-                            <span>Помощь</span>
-                            <small>Инструкции и поддержка</small>
-                        </button>
-                    </div>
-                </div>
-            `;
-        } catch (error) {
-            console.error('Ошибка загрузки главной страницы:', error);
-            mainContent.innerHTML = `
-                <div class="error-state">
-                    <h3>Ошибка загрузки данных</h3>
-                    <p>${error.message}</p>
-                </div>
-            `;
-        }
-    }
-
-    // Рендер страницы меню
-    async renderMenu() {
-        const mainContent = document.getElementById('mainContent');
-
-        // Проверяем права доступа
-        const canWriteMenu = authService.hasAccess('MENU_WRITE');
-
-        mainContent.innerHTML = `
-            <div class="page-actions">
-                ${canWriteMenu ? `
-                    <button class="btn-primary" onclick="app.showAddProductModal()">
-                        <span>+</span>
-                        Добавить товар
-                    </button>
-                    <button class="btn-secondary" onclick="app.showAddCategoryModal()">
-                        <span>+</span>
-                        Добавить категорию
-                    </button>
-                ` : `
-                    <p style="color: var(--text-secondary);">Только просмотр (недостаточно прав)</p>
-                `}
-            </div>
-
-            <div class="products-section">
-                <h3>Список товаров</h3>
-                <div class="products-container" id="productsContainer">
-                    <div class="loading">Загрузка товаров...</div>
-                </div>
-            </div>
-
-            <div class="categories-section" style="margin-top: 20px;">
-                <h3>Категории меню</h3>
-                <div class="categories-container" id="categoriesContainer">
-                    <div class="loading">Загрузка категорий...</div>
-                </div>
-            </div>
-        `;
-
-        // Загружаем товары и категории
-        setTimeout(async () => {
-            await this.renderProducts();
-            await this.renderCategories();
-        }, 100);
-    }
-
-    // Рендер товаров
-    async renderProducts() {
-        const container = document.getElementById('productsContainer');
-        if (!container) return;
-
-        try {
-            const products = await menuService.getProducts();
-            const canWriteMenu = authService.hasAccess('MENU_WRITE');
-
-            if (!products || products.length === 0) {
-                container.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-icon">🍽️</div>
-                        <h3>Нет товаров</h3>
-                        <p>Добавьте первый товар в меню</p>
-                        ${canWriteMenu ? `
-                            <button class="btn-primary" onclick="app.showAddProductModal()">
-                                Добавить товар
-                            </button>
-                        ` : ''}
-                    </div>
-                `;
-                return;
-            }
-
-            container.innerHTML = products.map(product => `
-                <div class="product-card" data-product-id="${product.product_id}">
-                    <div class="product-info">
-                        <div class="product-header">
-                            <h4 class="product-name">${this.escapeHtml(product.name)}</h4>
-                            <div class="product-price">${menuService.formatPrice(product.unit_price, product.qty_measure)}</div>
-                        </div>
-
-                        <div class="product-meta">
-                            <span class="product-category">${menuService.getProductTypeText(product.type)}</span>
-                            <span class="product-unit ${product.is_active ? 'active' : 'inactive'}">
-                                ${product.is_active ? 'Активен' : 'Неактивен'}
-                            </span>
-                        </div>
-
-                        <div class="product-details">
-                            <small>Мин: ${product.qty_min} | Макс: ${product.qty_max} | По умолч: ${product.qty_default}</small>
-                            <small>НДС: ${menuService.getTaxText(product.tax)}</small>
-                        </div>
-                    </div>
-
-                    ${canWriteMenu ? `
-                        <div class="product-actions">
-                            <button class="btn-icon" onclick="app.editProduct(${product.product_id})" title="Редактировать">
-                                ✏️
-                            </button>
-                            <button class="btn-icon btn-danger" onclick="app.deleteProduct(${product.product_id})" title="Удалить">
-                                🗑️
-                            </button>
-                        </div>
-                    ` : ''}
-                </div>
-            `).join('');
-        } catch (error) {
-            console.error('Ошибка загрузки товаров:', error);
-            container.innerHTML = '<div class="error-state">Ошибка загрузки товаров</div>';
-        }
-    }
-
-    // Рендер категорий
-    async renderCategories() {
-        const container = document.getElementById('categoriesContainer');
-        if (!container) return;
-
-        try {
-            const categories = await menuService.getCategories();
-            const canWriteMenu = authService.hasAccess('MENU_WRITE');
-
-            if (!categories || categories.length === 0) {
-                container.innerHTML = `
-                    <div class="empty-state">
-                        <div class="empty-icon">📁</div>
-                        <h3>Нет категорий</h3>
-                        <p>Добавьте первую категорию меню</p>
-                    </div>
-                `;
-                return;
-            }
-
-            container.innerHTML = categories.map(category => `
-                <div class="product-card">
-                    <div class="product-info">
-                        <div class="product-header">
-                            <h4 class="product-name">${this.escapeHtml(category.name)}</h4>
-                            <span class="product-unit ${category.is_active ? 'active' : 'inactive'}">
-                                ${category.is_active ? 'Активна' : 'Неактивна'}
-                            </span>
-                        </div>
-                    </div>
-                    ${canWriteMenu ? `
-                        <div class="product-actions">
-                            <button class="btn-icon" onclick="app.editCategory(${category.menu_category_id})" title="Редактировать">
-                                ✏️
-                            </button>
-                            <button class="btn-icon btn-danger" onclick="app.deleteCategory(${category.menu_category_id})" title="Удалить">
-                                🗑️
-                            </button>
-                        </div>
-                    ` : ''}
-                </div>
-            `).join('');
-        } catch (error) {
-            console.error('Ошибка загрузки категорий:', error);
-            container.innerHTML = '<div class="error-state">Ошибка загрузки категорий</div>';
-        }
-    }
-
     // Рендер страницы аналитики
     async renderAnalytics() {
         const mainContent = document.getElementById('mainContent');
+
+        // Проверяем права
+        if (!authService.hasAccess('ORDER_READ')) {
+            mainContent.innerHTML = `
+                <div class="error-state">
+                    <h3>Доступ запрещен</h3>
+                    <p>У вас нет прав для просмотра аналитики</p>
+                    <button onclick="app.navigateTo('menu')">К меню</button>
+                </div>
+            `;
+            return;
+        }
+
+        // Обновляем информацию о подписке в заголовке
+        await this.updateSubscriptionInHeader();
+
         mainContent.innerHTML = `
             <div class="analytics-controls">
                 <div class="period-selector">
                     <button class="period-btn active" data-period="day" onclick="app.switchPeriod('day', this)">День</button>
                     <button class="period-btn" data-period="week" onclick="app.switchPeriod('week', this)">Неделя</button>
                     <button class="period-btn" data-period="month" onclick="app.switchPeriod('month', this)">Месяц</button>
+                    <button class="period-btn" data-period="custom" onclick="app.switchPeriod('custom', this)">
+                        <span>📅</span>
+                        Выбрать период
+                    </button>
+                </div>
+                <div id="customDateRangeContainer" style="display: none; margin-top: 10px;">
+                    <input type="text" id="customDateRange" placeholder="Выберите период" style="width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 8px;">
                 </div>
             </div>
 
@@ -433,6 +310,13 @@ class RestaurantAdmin {
                 <div class="loading">Загрузка аналитики...</div>
             </div>
         `;
+
+        // Инициализируем календарь для выбора периода
+        setTimeout(() => {
+            analyticsService.initDateRangePicker((fromDate, toDate) => {
+                this.renderAnalyticsContent('custom', fromDate, toDate);
+            });
+        }, 100);
 
         setTimeout(() => {
             this.renderAnalyticsContent('day');
@@ -445,16 +329,30 @@ class RestaurantAdmin {
             btn.classList.remove('active');
         });
         button.classList.add('active');
-        this.renderAnalyticsContent(period);
+
+        const customDateContainer = document.getElementById('customDateRangeContainer');
+        if (period === 'custom') {
+            customDateContainer.style.display = 'block';
+        } else {
+            customDateContainer.style.display = 'none';
+            this.renderAnalyticsContent(period);
+        }
     }
 
     // Рендер контента аналитики
-    async renderAnalyticsContent(period) {
+    async renderAnalyticsContent(period, fromDate = null, toDate = null) {
         const container = document.getElementById('analyticsContent');
         if (!container) return;
 
         try {
-            const orders = await ordersService.getOrdersByPeriod(period);
+            let orders = [];
+
+            if (period === 'custom' && fromDate && toDate) {
+                orders = await ordersService.getOrdersByCustomPeriod(fromDate, toDate);
+            } else {
+                orders = await ordersService.getOrdersByPeriod(period);
+            }
+
             const stats = ordersService.calculateOrdersStats(orders);
 
             container.innerHTML = `
@@ -482,22 +380,296 @@ class RestaurantAdmin {
 
                 <div class="export-section">
                     <button class="btn-primary" onclick="app.exportData('${period}')">
-                        📊 Экспорт в Excel (${analyticsService.getPeriodText(period)})
+                        📊 Экспорт данных
                     </button>
                 </div>
             `;
 
-            // Инициализируем график
+            // Инициализируем график с реальными данными
             setTimeout(() => {
                 const ctx = document.getElementById('revenueChart');
                 if (ctx) {
-                    analyticsService.createRevenueChart(ctx, period);
+                    analyticsService.createRevenueChart(ctx, period, orders);
                 }
             }, 500);
 
         } catch (error) {
             console.error('Ошибка загрузки аналитики:', error);
+            errorLogger.manualLog(error);
             container.innerHTML = '<div class="error-state">Ошибка загрузки аналитики</div>';
+        }
+    }
+
+    // Экспорт данных
+    async exportData(period = 'day') {
+        try {
+            let fromDate = null;
+            let toDate = null;
+
+            if (period === 'custom') {
+                const datePicker = document.getElementById('customDateRange');
+                if (datePicker && datePicker.value) {
+                    const dates = datePicker.value.split(' - ');
+                    if (dates.length === 2) {
+                        fromDate = new Date(dates[0].split('.').reverse().join('-'));
+                        toDate = new Date(dates[1].split('.').reverse().join('-'));
+                    }
+                }
+
+                if (!fromDate || !toDate) {
+                    alert('Выберите период для экспорта');
+                    return;
+                }
+            }
+
+            await analyticsService.exportData(period, fromDate, toDate);
+
+        } catch (error) {
+            console.error('Ошибка экспорта:', error);
+            errorLogger.manualLog(error);
+            alert('Ошибка при экспорте данных: ' + error.message);
+        }
+    }
+
+    // Рендер страницы меню
+    async renderMenu() {
+        const mainContent = document.getElementById('mainContent');
+
+        // Проверяем права доступа
+        const canReadMenu = authService.hasAccess('MENU_READ');
+        const canWriteMenu = authService.hasAccess('MENU_WRITE');
+
+        if (!canReadMenu && !canWriteMenu) {
+            mainContent.innerHTML = `
+                <div class="error-state">
+                    <h3>Доступ запрещен</h3>
+                    <p>У вас нет прав для просмотра меню</p>
+                    <button onclick="app.navigateTo('analytics')">К аналитике</button>
+                </div>
+            `;
+            return;
+        }
+
+        mainContent.innerHTML = `
+            <div class="menu-tabs">
+                <button class="tab-btn active" data-tab="products">Товары</button>
+                <button class="tab-btn" data-tab="categories">Категории</button>
+            </div>
+
+            <div class="tab-content">
+                <div id="productsTab" class="tab-pane active">
+                    <div class="page-actions">
+                        ${canWriteMenu ? `
+                            <button class="btn-primary" onclick="app.showAddProductModal()">
+                                <span>+</span>
+                                Добавить товар
+                            </button>
+                        ` : `
+                            <p style="color: var(--text-secondary);">Режим просмотра</p>
+                        `}
+                    </div>
+                    <div class="products-container" id="productsContainer">
+                        <div class="loading">Загрузка товаров...</div>
+                    </div>
+                </div>
+
+                <div id="categoriesTab" class="tab-pane">
+                    <div class="page-actions">
+                        ${canWriteMenu ? `
+                            <button class="btn-primary" onclick="app.showAddCategoryModal()">
+                                <span>+</span>
+                                Добавить категорию
+                            </button>
+                        ` : `
+                            <p style="color: var(--text-secondary);">Режим просмотра</p>
+                        `}
+                    </div>
+                    <div class="categories-container" id="categoriesContainer">
+                        <div class="loading">Загрузка категорий...</div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Настройка вкладок
+        this.setupMenuTabs();
+
+        // Загружаем данные
+        try {
+            await this.renderProducts();
+            await this.renderCategories();
+        } catch (error) {
+            console.error('Error loading menu data:', error);
+            errorLogger.manualLog(error);
+        }
+    }
+
+    // Настройка вкладок меню
+    setupMenuTabs() {
+        const tabBtns = document.querySelectorAll('.tab-btn');
+        const tabPanes = document.querySelectorAll('.tab-pane');
+
+        tabBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tabName = btn.getAttribute('data-tab');
+
+                // Активируем кнопку
+                tabBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+
+                // Показываем соответствующую вкладку
+                tabPanes.forEach(pane => pane.classList.remove('active'));
+                document.getElementById(`${tabName}Tab`).classList.add('active');
+            });
+        });
+    }
+
+    // Рендер товаров
+    async renderProducts() {
+        const container = document.getElementById('productsContainer');
+        if (!container) return;
+
+        // Проверяем права
+        if (!authService.hasAccess('MENU_READ')) {
+            container.innerHTML = `
+                <div class="error-state">
+                    <p>Нет прав для просмотра товаров</p>
+                </div>
+            `;
+            return;
+        }
+
+        try {
+            const products = await menuService.getProducts();
+            const canWriteMenu = authService.hasAccess('MENU_WRITE');
+
+            if (!products || products.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">🍽️</div>
+                        <h3>Нет товаров</h3>
+                        <p>Добавьте первый товар в меню</p>
+                        ${canWriteMenu ? `
+                            <button class="btn-primary" onclick="app.showAddProductModal()">
+                                Добавить товар
+                            </button>
+                        ` : ''}
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = products.map(product => {
+                const priceInfo = menuService.getPriceInfo(product);
+
+                return `
+                <div class="product-card" data-product-id="${product.product_id}">
+                    <div class="product-info">
+                        <div class="product-header">
+                            <h4 class="product-name">${this.escapeHtml(product.name)}</h4>
+                            <div class="product-price">
+                                <div class="price-main">${priceInfo.display}</div>
+                                ${priceInfo.details ? `<div class="price-details">${priceInfo.details}</div>` : ''}
+                            </div>
+                        </div>
+
+                        <div class="product-meta">
+                            <span class="product-category">${menuService.getProductTypeText(product.type)}</span>
+                            <span class="product-unit ${product.is_active ? 'active' : 'inactive'}">
+                                ${product.is_active ? 'Активен' : 'Неактивен'}
+                            </span>
+                        </div>
+
+                        <div class="product-details">
+                            <small>Мин: ${product.qty_min}${menuService.getMeasureText(product.qty_measure)} | Макс: ${product.qty_max}${menuService.getMeasureText(product.qty_measure)} | По умолч: ${product.qty_default}${menuService.getMeasureText(product.qty_measure)}</small>
+                            <small>НДС: ${menuService.getTaxText(product.tax)}</small>
+                        </div>
+                    </div>
+
+                    ${canWriteMenu ? `
+                        <div class="product-actions">
+                            <button class="btn-icon" onclick="app.editProduct(${product.product_id})" title="Редактировать">
+                                ✏️
+                            </button>
+                            <button class="btn-icon btn-danger" onclick="app.deleteProduct(${product.product_id})" title="Удалить">
+                                🗑️
+                            </button>
+                        </div>
+                    ` : ''}
+                </div>
+                `;
+            }).join('');
+        } catch (error) {
+            console.error('Ошибка загрузки товаров:', error);
+            errorLogger.manualLog(error);
+            container.innerHTML = '<div class="error-state">Ошибка загрузки товаров</div>';
+        }
+    }
+
+    // Рендер категорий
+    async renderCategories() {
+        const container = document.getElementById('categoriesContainer');
+        if (!container) return;
+
+        // Проверяем права
+        if (!authService.hasAccess('MENU_READ')) {
+            container.innerHTML = `
+                <div class="error-state">
+                    <p>Нет прав для просмотра категорий</p>
+                </div>
+            `;
+            return;
+        }
+
+        try {
+            const categories = await menuService.getCategories();
+            const canWriteMenu = authService.hasAccess('MENU_WRITE');
+
+            if (!categories || categories.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">📁</div>
+                        <h3>Нет категорий</h3>
+                        <p>Добавьте первую категорию меню</p>
+                        ${canWriteMenu ? `
+                            <button class="btn-primary" onclick="app.showAddCategoryModal()">
+                                Добавить категорию
+                            </button>
+                        ` : ''}
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = categories.map(category => `
+                <div class="category-card">
+                    <div class="category-info">
+                        <div class="category-header">
+                            <h4 class="category-name">${this.escapeHtml(category.name)}</h4>
+                            <span class="category-status ${category.is_active ? 'active' : 'inactive'}">
+                                ${category.is_active ? 'Активна' : 'Неактивна'}
+                            </span>
+                        </div>
+                        <div class="category-meta">
+                            <small>ID: ${category.menu_category_id}</small>
+                        </div>
+                    </div>
+                    ${canWriteMenu ? `
+                        <div class="category-actions">
+                            <button class="btn-icon" onclick="app.editCategory(${category.menu_category_id})" title="Редактировать">
+                                ✏️
+                            </button>
+                            <button class="btn-icon btn-danger" onclick="app.deleteCategory(${category.menu_category_id})" title="Удалить">
+                                🗑️
+                            </button>
+                        </div>
+                    ` : ''}
+                </div>
+            `).join('');
+        } catch (error) {
+            console.error('Ошибка загрузки категорий:', error);
+            errorLogger.manualLog(error);
+            container.innerHTML = '<div class="error-state">Ошибка загрузки категорий</div>';
         }
     }
 
@@ -533,6 +705,8 @@ class RestaurantAdmin {
         if (mode === 'add') {
             title.textContent = 'Добавить товар';
             document.getElementById('productId').value = '';
+            // Устанавливаем значения по умолчанию для нового товара
+            this.setDefaultProductValues();
         } else {
             title.textContent = 'Редактировать товар';
             await this.loadProductForEdit(productId);
@@ -543,6 +717,14 @@ class RestaurantAdmin {
         this.fillTaxSelect();
 
         modal.style.display = 'flex';
+    }
+
+    // Установка значений по умолчанию для нового товара
+    setDefaultProductValues() {
+        document.getElementById('productMinQuantity').value = 1;
+        document.getElementById('productMaxQuantity').value = 999;
+        document.getElementById('productDefaultQuantity').value = 1;
+        document.getElementById('productActive').checked = true;
     }
 
     // Загрузить товар для редактирования
@@ -563,7 +745,44 @@ class RestaurantAdmin {
 
         } catch (error) {
             console.error('Ошибка загрузки товара:', error);
+            errorLogger.manualLog(error);
             alert('Ошибка загрузки данных товара');
+        }
+    }
+
+    // Обработчик изменения типа товара
+    onProductTypeChange() {
+        const type = document.getElementById('productType').value;
+        const measure = document.getElementById('productMeasure').value;
+
+        if (type) {
+            const defaultParams = menuService.getDefaultParamsForProductType(type, measure);
+
+            // Устанавливаем значения по умолчанию
+            document.getElementById('productMaxQuantity').value = defaultParams.qty_max;
+            document.getElementById('productDefaultQuantity').value = defaultParams.qty_default;
+
+            // Для маркированных товаров принудительно устанавливаем штуки
+            if (menuService.isMarkedProductType(type)) {
+                document.getElementById('productMeasure').value = 'PIECES';
+                document.getElementById('productMeasure').disabled = true;
+            } else {
+                document.getElementById('productMeasure').disabled = false;
+            }
+        }
+    }
+
+    // Обработчик изменения единицы измерения
+    onMeasureChange() {
+        const type = document.getElementById('productType').value;
+        const measure = document.getElementById('productMeasure').value;
+
+        if (type && measure) {
+            const defaultParams = menuService.getDefaultParamsForProductType(type, measure);
+
+            // Обновляем максимальное количество и количество по умолчанию
+            document.getElementById('productMaxQuantity').value = defaultParams.qty_max;
+            document.getElementById('productDefaultQuantity').value = defaultParams.qty_default;
         }
     }
 
@@ -644,6 +863,7 @@ class RestaurantAdmin {
 
         } catch (error) {
             console.error('Ошибка сохранения товара:', error);
+            errorLogger.manualLog(error);
             alert('Ошибка сохранения товара: ' + error.message);
         }
     }
@@ -665,6 +885,7 @@ class RestaurantAdmin {
             alert('Товар успешно удален!');
         } catch (error) {
             console.error('Ошибка удаления товара:', error);
+            errorLogger.manualLog(error);
             alert('Ошибка удаления товара: ' + error.message);
         }
     }
@@ -672,20 +893,131 @@ class RestaurantAdmin {
     // Закрыть модальное окно товара
     closeProductModal() {
         document.getElementById('productModal').style.display = 'none';
+        // Разблокируем селект единиц измерения
+        document.getElementById('productMeasure').disabled = false;
     }
 
-    // ========== ФУНКЦИОНАЛ ЭКСПОРТА ==========
+    // ========== ФУНКЦИОНАЛ РАБОТЫ С КАТЕГОРИЯМИ ==========
 
-    // Экспорт данных
-    async exportData(period = 'day') {
-        try {
-            const reportData = await analyticsService.createOrdersReport(period);
-            const filename = `report_${period}_${new Date().toISOString().split('T')[0]}.csv`;
-            analyticsService.exportToCSV(reportData, filename);
-        } catch (error) {
-            console.error('Ошибка экспорта:', error);
-            alert('Ошибка при экспорте данных: ' + error.message);
+    // Показать модальное окно добавления категории
+    showAddCategoryModal() {
+        if (!authService.hasAccess('MENU_WRITE')) {
+            alert('Недостаточно прав для добавления категорий');
+            return;
         }
+        this.openCategoryModal('add');
+    }
+
+    // Редактировать категорию
+    async editCategory(categoryId) {
+        if (!authService.hasAccess('MENU_WRITE')) {
+            alert('Недостаточно прав для редактирования категорий');
+            return;
+        }
+        this.openCategoryModal('edit', categoryId);
+    }
+
+    // Открыть модальное окно категории
+    async openCategoryModal(mode, categoryId = null) {
+        const modal = document.getElementById('categoryModal');
+        const title = document.getElementById('categoryModalTitle');
+
+        // Сброс формы
+        document.getElementById('categoryForm').reset();
+
+        if (mode === 'add') {
+            title.textContent = 'Добавить категорию';
+            document.getElementById('categoryId').value = '';
+        } else {
+            title.textContent = 'Редактировать категорию';
+            await this.loadCategoryForEdit(categoryId);
+        }
+
+        modal.style.display = 'flex';
+    }
+
+    // Загрузить категорию для редактирования
+    async loadCategoryForEdit(categoryId) {
+        try {
+            const category = await menuService.getCategory(categoryId);
+
+            document.getElementById('categoryId').value = category.menu_category_id;
+            document.getElementById('categoryName').value = category.name;
+            document.getElementById('categoryActive').checked = category.is_active;
+
+        } catch (error) {
+            console.error('Ошибка загрузки категории:', error);
+            errorLogger.manualLog(error);
+            alert('Ошибка загрузки данных категории');
+        }
+    }
+
+    // Сохранить категорию
+    async saveCategory() {
+        if (!authService.hasAccess('MENU_WRITE')) {
+            alert('Недостаточно прав для сохранения категорий');
+            return;
+        }
+
+        const form = document.getElementById('categoryForm');
+
+        if (!form.checkValidity()) {
+            alert('Заполните все обязательные поля');
+            return;
+        }
+
+        const categoryData = {
+            name: document.getElementById('categoryName').value,
+            is_active: document.getElementById('categoryActive').checked
+        };
+
+        const categoryId = document.getElementById('categoryId').value;
+
+        try {
+            if (categoryId) {
+                // Редактирование существующей категории
+                await menuService.updateCategory(categoryId, categoryData);
+            } else {
+                // Добавление новой категории
+                await menuService.createCategory(categoryData);
+            }
+
+            this.closeCategoryModal();
+            this.loadPage('menu');
+            alert('Категория успешно сохранена!');
+
+        } catch (error) {
+            console.error('Ошибка сохранения категории:', error);
+            errorLogger.manualLog(error);
+            alert('Ошибка сохранения категории: ' + error.message);
+        }
+    }
+
+    // Удалить категорию
+    async deleteCategory(categoryId) {
+        if (!authService.hasAccess('MENU_WRITE')) {
+            alert('Недостаточно прав для удаления категорий');
+            return;
+        }
+
+        if (!confirm('Вы уверены, что хотите удалить эту категорию?')) {
+            return;
+        }
+
+        try {
+            await menuService.deleteCategory(categoryId);
+            this.loadPage('menu');
+            alert('Категория успешно удалена!');
+        } catch (error) {
+            console.error('Ошибка удаления категории:', error);
+            errorLogger.manualLog(error);
+            alert('Ошибка удаления категории: ' + error.message);
+        }
+    }
+
+    // Закрыть модальное окно категории
+    closeCategoryModal() {
+        document.getElementById('categoryModal').style.display = 'none';
     }
 
     // ========== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ==========
@@ -695,24 +1027,6 @@ class RestaurantAdmin {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
-    }
-
-    // ========== ЗАГЛУШКИ ДЛЯ БУДУЩЕГО ФУНКЦИОНАЛА ==========
-
-    showAddCategoryModal() {
-        alert('Добавление категорий будет реализовано в следующей версии');
-    }
-
-    editCategory(categoryId) {
-        alert('Редактирование категорий будет реализовано в следующей версии');
-    }
-
-    deleteCategory(categoryId) {
-        alert('Удаление категорий будет реализовано в следующей версии');
-    }
-
-    showHelp() {
-        alert('Раздел помощи будет реализован в следующей версии');
     }
 }
 

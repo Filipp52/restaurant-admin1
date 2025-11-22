@@ -1,7 +1,6 @@
-// Базовый сервис для API запросов с прокси
+// Базовый сервис для API запросов с улучшенной обработкой ошибок
 class ApiService {
     constructor() {
-        // Используем локальный прокси-сервер
         this.baseUrl = 'http://localhost:3001/api';
         this.token = null;
         console.log('🔧 API настроен на прокси:', this.baseUrl);
@@ -9,7 +8,7 @@ class ApiService {
 
     setToken(token) {
         this.token = token;
-        console.log('🔑 Токен установлен:', token ? `${token.substring(0, 10)}...` : 'null');
+        console.log('🔑 Токен установлен');
     }
 
     async request(endpoint, options = {}) {
@@ -34,8 +33,6 @@ class ApiService {
         }
 
         try {
-            console.log('📤 Отправка запроса...');
-
             const response = await fetch(url, config);
 
             console.log(`📥 Ответ: ${response.status} ${response.statusText}`);
@@ -46,16 +43,23 @@ class ApiService {
             }
 
             const data = await response.json();
-            console.log('📥 Данные ответа получены');
 
             if (!response.ok) {
-                throw new Error(data.detail || `HTTP ошибка! статус: ${response.status}`);
+                const error = new Error(data.detail || `HTTP ошибка! статус: ${response.status}`);
+                error.status = response.status;
+                error.data = data;
+                throw error;
             }
 
             console.log('✅ Запрос успешен');
             return data;
         } catch (error) {
             console.error('❌ Ошибка API запроса:', error);
+
+            // Логируем ошибку
+            if (window.errorLogger) {
+                window.errorLogger.manualLog(error);
+            }
 
             if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
                 throw new Error('Не удалось подключиться к прокси-серверу. Убедитесь, что прокси запущен на localhost:3001');
@@ -112,7 +116,15 @@ class ApiService {
         console.log(`📥 Ответ загрузки: ${response.status} ${response.statusText}`);
 
         if (!response.ok) {
-            throw new Error(`HTTP ошибка! статус: ${response.status}`);
+            const error = new Error(`HTTP ошибка! статус: ${response.status}`);
+            error.status = response.status;
+
+            // Логируем ошибку
+            if (window.errorLogger) {
+                window.errorLogger.manualLog(error);
+            }
+
+            throw error;
         }
 
         return response;
