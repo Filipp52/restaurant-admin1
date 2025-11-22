@@ -281,6 +281,7 @@ class RestaurantAdmin {
                 <div class="error-state">
                     <h3>Доступ запрещен</h3>
                     <p>У вас нет прав для просмотра аналитики</p>
+                    <p><small>Требуются права: ORDER_READ</small></p>
                     <button onclick="app.navigateTo('menu')">К меню</button>
                 </div>
             `;
@@ -355,10 +356,22 @@ class RestaurantAdmin {
 
             const stats = ordersService.calculateOrdersStats(orders);
 
+            // Если кастомный период и нет данных, показываем сообщение
+            if (period === 'custom' && orders.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">📊</div>
+                        <h3>Нет данных за выбранный период</h3>
+                        <p>Выберите другой период или убедитесь, что есть завершенные заказы</p>
+                    </div>
+                `;
+                return;
+            }
+
             container.innerHTML = `
                 <div class="analytics-stats">
                     <div class="stat-card">
-                        <div class="stat-value">${stats.totalRevenue} ₽</div>
+                        <div class="stat-value">${stats.totalRevenue.toLocaleString('ru-RU')} ₽</div>
                         <div class="stat-label">Выручка за ${analyticsService.getPeriodText(period)}</div>
                     </div>
                     <div class="stat-card">
@@ -366,7 +379,7 @@ class RestaurantAdmin {
                         <div class="stat-label">Заказов за ${analyticsService.getPeriodText(period)}</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-value">${stats.averageOrder} ₽</div>
+                        <div class="stat-value">${stats.averageOrder.toLocaleString('ru-RU')} ₽</div>
                         <div class="stat-label">Средний чек</div>
                     </div>
                 </div>
@@ -444,6 +457,7 @@ class RestaurantAdmin {
                 <div class="error-state">
                     <h3>Доступ запрещен</h3>
                     <p>У вас нет прав для просмотра меню</p>
+                    <p><small>Требуются права: MENU_READ или MENU_WRITE</small></p>
                     <button onclick="app.navigateTo('analytics')">К аналитике</button>
                 </div>
             `;
@@ -465,11 +479,15 @@ class RestaurantAdmin {
                                 Добавить товар
                             </button>
                         ` : `
-                            <p style="color: var(--text-secondary);">Режим просмотра</p>
+                            <p style="color: var(--text-secondary);">Режим просмотра (недостаточно прав для редактирования)</p>
                         `}
                     </div>
-                    <div class="products-container" id="productsContainer">
-                        <div class="loading">Загрузка товаров...</div>
+
+                    <div class="products-section">
+                        <h3>Список товаров</h3>
+                        <div class="products-container" id="productsContainer">
+                            <div class="loading">Загрузка товаров...</div>
+                        </div>
                     </div>
                 </div>
 
@@ -481,11 +499,15 @@ class RestaurantAdmin {
                                 Добавить категорию
                             </button>
                         ` : `
-                            <p style="color: var(--text-secondary);">Режим просмотра</p>
+                            <p style="color: var(--text-secondary);">Режим просмотра (недостаточно прав для редактирования)</p>
                         `}
                     </div>
-                    <div class="categories-container" id="categoriesContainer">
-                        <div class="loading">Загрузка категорий...</div>
+
+                    <div class="categories-section">
+                        <h3>Список категорий</h3>
+                        <div class="categories-container" id="categoriesContainer">
+                            <div class="loading">Загрузка категорий...</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -495,13 +517,10 @@ class RestaurantAdmin {
         this.setupMenuTabs();
 
         // Загружаем данные
-        try {
+        setTimeout(async () => {
             await this.renderProducts();
             await this.renderCategories();
-        } catch (error) {
-            console.error('Error loading menu data:', error);
-            errorLogger.manualLog(error);
-        }
+        }, 100);
     }
 
     // Настройка вкладок меню
@@ -540,7 +559,8 @@ class RestaurantAdmin {
         }
 
         try {
-            const products = await menuService.getProducts();
+            const data = await menuService.getProductsWithCategories();
+            const { products, categories } = data;
             const canWriteMenu = authService.hasAccess('MENU_WRITE');
 
             if (!products || products.length === 0) {
@@ -559,8 +579,22 @@ class RestaurantAdmin {
                 return;
             }
 
-            container.innerHTML = products.map(product => {
+            // Сортируем товары по категориям и названию
+            const sortedProducts = products.sort((a, b) => {
+                // Сначала по категории
+                const catA = categories.find(c => c.menu_category_id === a.category_id)?.name || '';
+                const catB = categories.find(c => c.menu_category_id === b.category_id)?.name || '';
+
+                if (catA !== catB) {
+                    return catA.localeCompare(catB);
+                }
+                // Затем по названию товара
+                return a.name.localeCompare(b.name);
+            });
+
+            container.innerHTML = sortedProducts.map(product => {
                 const priceInfo = menuService.getPriceInfo(product);
+                const category = categories.find(c => c.menu_category_id === product.category_id);
 
                 return `
                 <div class="product-card" data-product-id="${product.product_id}">
@@ -574,6 +608,7 @@ class RestaurantAdmin {
                         </div>
 
                         <div class="product-meta">
+                            ${category ? `<span class="product-category-badge">${this.escapeHtml(category.name)}</span>` : ''}
                             <span class="product-category">${menuService.getProductTypeText(product.type)}</span>
                             <span class="product-unit ${product.is_active ? 'active' : 'inactive'}">
                                 ${product.is_active ? 'Активен' : 'Неактивен'}
@@ -641,7 +676,20 @@ class RestaurantAdmin {
                 return;
             }
 
-            container.innerHTML = categories.map(category => `
+            // Загружаем товары для каждой категории
+            const categoriesWithProducts = await Promise.all(
+                categories.map(async (category) => {
+                    try {
+                        const products = await menuService.getCategoryProducts(category.menu_category_id);
+                        return { ...category, products };
+                    } catch (error) {
+                        console.error(`Failed to load products for category ${category.menu_category_id}:`, error);
+                        return { ...category, products: [] };
+                    }
+                })
+            );
+
+            container.innerHTML = categoriesWithProducts.map(category => `
                 <div class="category-card">
                     <div class="category-info">
                         <div class="category-header">
@@ -651,8 +699,13 @@ class RestaurantAdmin {
                             </span>
                         </div>
                         <div class="category-meta">
-                            <small>ID: ${category.menu_category_id}</small>
+                            <small>ID: ${category.menu_category_id} | Товаров: ${category.products.length}</small>
                         </div>
+                        ${category.products.length > 0 ? `
+                            <div class="category-products">
+                                <small><strong>Товары:</strong> ${category.products.map(p => p.name).join(', ')}</small>
+                            </div>
+                        ` : ''}
                     </div>
                     ${canWriteMenu ? `
                         <div class="category-actions">
@@ -698,6 +751,11 @@ class RestaurantAdmin {
         const modal = document.getElementById('productModal');
         const title = document.getElementById('productModalTitle');
 
+        // Сначала заполняем селекты
+        this.fillProductTypeSelect();
+        this.fillTaxSelect();
+        this.fillCategorySelect();
+
         // Сброс формы
         document.getElementById('productForm').reset();
         document.getElementById('imageFileName').textContent = 'Файл не выбран';
@@ -705,16 +763,11 @@ class RestaurantAdmin {
         if (mode === 'add') {
             title.textContent = 'Добавить товар';
             document.getElementById('productId').value = '';
-            // Устанавливаем значения по умолчанию для нового товара
             this.setDefaultProductValues();
         } else {
             title.textContent = 'Редактировать товар';
             await this.loadProductForEdit(productId);
         }
-
-        // Заполняем селекты
-        this.fillProductTypeSelect();
-        this.fillTaxSelect();
 
         modal.style.display = 'flex';
     }
@@ -731,6 +784,8 @@ class RestaurantAdmin {
     async loadProductForEdit(productId) {
         try {
             const product = await menuService.getProduct(productId);
+            const productsData = await menuService.getProductsWithCategories();
+            const categoryId = menuService.getProductCategory(productId, productsData.productsByCategory);
 
             document.getElementById('productId').value = product.product_id;
             document.getElementById('productName').value = product.name;
@@ -743,11 +798,29 @@ class RestaurantAdmin {
             document.getElementById('productMeasure').value = product.qty_measure;
             document.getElementById('productActive').checked = product.is_active;
 
+            // Устанавливаем категорию
+            const categorySelect = document.getElementById('productCategory');
+            if (categorySelect) {
+                categorySelect.value = categoryId || '';
+            }
+
         } catch (error) {
             console.error('Ошибка загрузки товара:', error);
             errorLogger.manualLog(error);
             alert('Ошибка загрузки данных товара');
         }
+    }
+
+    // Заполнить селект категорий
+    fillCategorySelect() {
+        const categorySelect = document.getElementById('productCategory');
+        if (!categorySelect) return;
+
+        const categories = menuService.categories || [];
+        categorySelect.innerHTML = '<option value="">Без категории</option>' +
+            categories.map(cat =>
+                `<option value="${cat.menu_category_id}">${this.escapeHtml(cat.name)}</option>`
+            ).join('');
     }
 
     // Обработчик изменения типа товара
@@ -840,6 +913,7 @@ class RestaurantAdmin {
         };
 
         const productId = document.getElementById('productId').value;
+        const categoryId = document.getElementById('productCategory').value;
         const imageFile = document.getElementById('productImage').files[0];
 
         try {
@@ -847,9 +921,36 @@ class RestaurantAdmin {
             if (productId) {
                 // Редактирование существующего товара
                 savedProduct = await menuService.updateProduct(productId, productData);
+
+                // Обновляем категорию если она изменилась
+                if (categoryId) {
+                    const currentData = await menuService.getProductsWithCategories();
+                    const currentCategoryId = menuService.getProductCategory(productId, currentData.productsByCategory);
+
+                    if (currentCategoryId !== parseInt(categoryId)) {
+                        // Удаляем из старой категории если была
+                        if (currentCategoryId) {
+                            await menuService.removeProductFromCategory(productId, currentCategoryId);
+                        }
+                        // Добавляем в новую категорию
+                        await menuService.addProductToCategory(productId, categoryId);
+                    }
+                } else {
+                    // Удаляем из категории если выбрано "Без категории"
+                    const currentData = await menuService.getProductsWithCategories();
+                    const currentCategoryId = menuService.getProductCategory(productId, currentData.productsByCategory);
+                    if (currentCategoryId) {
+                        await menuService.removeProductFromCategory(productId, currentCategoryId);
+                    }
+                }
             } else {
                 // Добавление нового товара
                 savedProduct = await menuService.createProduct(productData);
+
+                // Добавляем в категорию если выбрана
+                if (categoryId && savedProduct) {
+                    await menuService.addProductToCategory(savedProduct.product_id, categoryId);
+                }
             }
 
             // Загрузка изображения если есть

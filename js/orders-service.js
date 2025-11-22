@@ -69,17 +69,35 @@ class OrdersService {
 
     // Расчет статистики по заказам
     calculateOrdersStats(orders) {
-        const totalRevenue = orders.reduce((sum, order) => {
-            return sum + (order.total_amount || 0);
+        // Для каждого заказа получаем полную сумму
+        const ordersWithTotals = orders.map(order => {
+            // Если у заказа нет total_amount, пытаемся рассчитать из items
+            let totalAmount = order.total_amount || 0;
+
+            if (totalAmount === 0 && order.items) {
+                totalAmount = order.items.reduce((sum, item) => {
+                    return sum + (item.quantity * item.unit_price);
+                }, 0);
+            }
+
+            return {
+                ...order,
+                calculated_total: totalAmount
+            };
+        });
+
+        const totalRevenue = ordersWithTotals.reduce((sum, order) => {
+            return sum + order.calculated_total;
         }, 0);
 
         const totalOrders = orders.length;
         const averageOrder = totalOrders > 0 ? totalRevenue / totalOrders : 0;
 
         return {
-            totalRevenue: Math.round(totalRevenue),
+            totalRevenue: Math.round(totalRevenue * 100) / 100, // Округляем до копеек
             totalOrders,
-            averageOrder: Math.round(averageOrder)
+            averageOrder: Math.round(averageOrder * 100) / 100,
+            orders: ordersWithTotals
         };
     }
 
@@ -87,10 +105,9 @@ class OrdersService {
     async getTodayOrders() {
         const today = new Date();
         const from = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
-        const till = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59).toISOString();
 
         try {
-            const orders = await this.getCompletedOrders(from, till);
+            const orders = await this.getCompletedOrders(from);
             return Array.isArray(orders) ? orders : [];
         } catch (error) {
             console.error('Failed to get today orders:', error);
@@ -98,7 +115,7 @@ class OrdersService {
         }
     }
 
-    // Получение заказов за период
+    // Получение заказов за период с правильными датами
     async getOrdersByPeriod(period) {
         try {
             const now = new Date();
@@ -110,22 +127,30 @@ class OrdersService {
                     till = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59).toISOString();
                     break;
                 case 'week':
-                    const weekAgo = new Date(now);
-                    weekAgo.setDate(now.getDate() - 7);
-                    from = weekAgo.toISOString();
-                    till = now.toISOString();
+                    const weekStart = new Date(now);
+                    weekStart.setDate(now.getDate() - now.getDay() + 1); // Понедельник
+                    weekStart.setHours(0, 0, 0, 0);
+
+                    const weekEnd = new Date(weekStart);
+                    weekEnd.setDate(weekStart.getDate() + 6); // Воскресенье
+                    weekEnd.setHours(23, 59, 59, 999);
+
+                    from = weekStart.toISOString();
+                    till = weekEnd.toISOString();
                     break;
                 case 'month':
-                    const monthAgo = new Date(now);
-                    monthAgo.setMonth(now.getMonth() - 1);
-                    from = monthAgo.toISOString();
-                    till = now.toISOString();
+                    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+                    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+                    from = monthStart.toISOString();
+                    till = monthEnd.toISOString();
                     break;
                 default:
                     from = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
                     till = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59).toISOString();
             }
 
+            console.log(`📅 Period ${period}: from ${from} to ${till}`);
             const orders = await this.getCompletedOrders(from, till);
             return Array.isArray(orders) ? orders : [];
         } catch (error) {
@@ -140,7 +165,7 @@ class OrdersService {
         const from = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate()).toISOString();
         const till = new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate(), 23, 59, 59).toISOString();
 
-        return await this.getOrdersByPeriod(from, till);
+        return await this.getCompletedOrders(from, till);
     }
 
     // ========== МЕТОДЫ ДЛЯ ЭКСПОРТА ==========

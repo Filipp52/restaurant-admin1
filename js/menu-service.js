@@ -7,6 +7,7 @@ class MenuService {
             'JUICE_MARKED',
             'NOT_ALCOHOL_BEER_MARKED'
         ];
+        this.categories = [];
     }
 
     // ========== РАБОТА С ТОВАРАМИ ==========
@@ -14,24 +15,12 @@ class MenuService {
     // Получение всех товаров
     async getProducts(onlyActive = false) {
         try {
-            const endpoint = `/menu/products?only_active=${onlyActive}`;
-            console.log('🔄 Fetching products from:', endpoint);
-
-            const products = await apiService.get(endpoint);
-            console.log('✅ Products received:', products);
-
-            if (!Array.isArray(products)) {
-                console.warn('⚠️ Products is not an array:', products);
-                return [];
-            }
-
+            const products = await apiService.get(`/menu/products?only_active=${onlyActive}`);
             return products.map(product => this.enrichProductData(product));
         } catch (error) {
-            console.error('❌ Failed to get products:', error);
+            console.error('Failed to get products:', error);
             errorLogger.manualLog(error);
-
-            // Возвращаем пустой массив вместо выброса ошибки
-            return [];
+            throw error;
         }
     }
 
@@ -42,7 +31,7 @@ class MenuService {
         // Расчет цены для отображения
         if (product.qty_measure === 'GRAMS' && product.qty_default > 0) {
             // Для весовых товаров показываем цену за количество по умолчанию
-            enriched.display_price = (product.unit_price * product.qty_default / 1000).toFixed(2);
+            enriched.display_price = (product.unit_price * product.qty_default).toFixed(2);
             enriched.display_unit = '₽';
         } else {
             // Для штучных товаров показываем цену за штуку
@@ -169,7 +158,8 @@ class MenuService {
     // Получение всех категорий
     async getCategories(onlyActive = false) {
         try {
-            return await apiService.get(`/menu/categories?only_active=${onlyActive}`);
+            this.categories = await apiService.get(`/menu/categories?only_active=${onlyActive}`);
+            return this.categories;
         } catch (error) {
             console.error('Failed to get categories:', error);
             errorLogger.manualLog(error);
@@ -269,6 +259,90 @@ class MenuService {
         }
     }
 
+    // ========== РАБОТА С КАТЕГОРИЯМИ ТОВАРОВ ==========
+
+    // Получение всех товаров с информацией о категориях
+    async getProductsWithCategories(onlyActive = false) {
+        try {
+            const [products, categories] = await Promise.all([
+                this.getProducts(onlyActive),
+                this.getCategories(onlyActive)
+            ]);
+
+            // Создаем маппинг товаров по категориям
+            const productsByCategory = new Map();
+
+            // Загружаем товары для каждой категории
+            for (const category of categories) {
+                try {
+                    const categoryProducts = await this.getCategoryProducts(category.menu_category_id, onlyActive);
+                    productsByCategory.set(category.menu_category_id, categoryProducts);
+                } catch (error) {
+                    console.warn(`Failed to load products for category ${category.menu_category_id}:`, error);
+                    productsByCategory.set(category.menu_category_id, []);
+                }
+            }
+
+            // Создаем маппинг категории для каждого товара
+            const productCategoryMap = new Map();
+            for (const [categoryId, categoryProducts] of productsByCategory) {
+                for (const product of categoryProducts) {
+                    productCategoryMap.set(product.product_id, categoryId);
+                }
+            }
+
+            // Обогащаем товары информацией о категории
+            const enrichedProducts = products.map(product => ({
+                ...product,
+                category_id: productCategoryMap.get(product.product_id) || null
+            }));
+
+            return {
+                products: enrichedProducts,
+                categories,
+                productsByCategory
+            };
+        } catch (error) {
+            console.error('Failed to get products with categories:', error);
+            errorLogger.manualLog(error);
+            throw error;
+        }
+    }
+
+    // Получение категории товара
+    getProductCategory(productId, productsByCategory) {
+        for (const [categoryId, products] of productsByCategory) {
+            if (products.some(p => p.product_id === productId)) {
+                return categoryId;
+            }
+        }
+        return null;
+    }
+
+    // Добавление товара в категорию
+    async addProductToCategory(productId, categoryId) {
+        try {
+            return await apiService.patch(`/menu/categories/${categoryId}/products`, {
+                products_id: [productId]
+            });
+        } catch (error) {
+            console.error('Failed to add product to category:', error);
+            errorLogger.manualLog(error);
+            throw error;
+        }
+    }
+
+    // Удаление товара из категории
+    async removeProductFromCategory(productId, categoryId) {
+        try {
+            return await apiService.delete(`/menu/categories/${categoryId}/products/${productId}`);
+        } catch (error) {
+            console.error('Failed to remove product from category:', error);
+            errorLogger.manualLog(error);
+            throw error;
+        }
+    }
+
     // ========== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ==========
 
     // Проверка, является ли тип товара маркированным
@@ -336,9 +410,9 @@ class MenuService {
 
     // Форматирование цены для отображения
     formatPrice(product) {
-        if (product.qty_measure === 'GRAMS' && product.qty_default > 0) {
+        if (product.qty_measure === 'GRAMS') {
             // Для весовых товаров показываем цену за количество по умолчанию
-            const price = (product.unit_price * product.qty_default / 1000).toFixed(2);
+            const price = (product.unit_price * product.qty_default).toFixed(2);
             return `${price} ₽`;
         } else {
             // Для штучных товаров показываем цену за штуку
@@ -349,7 +423,7 @@ class MenuService {
     // Получение полной информации о цене
     getPriceInfo(product) {
         if (product.qty_measure === 'GRAMS') {
-            const defaultPrice = (product.unit_price * product.qty_default / 1000).toFixed(2);
+            const defaultPrice = (product.unit_price * product.qty_default).toFixed(2);
             const kgPrice = (product.unit_price * 1000).toFixed(2);
             return {
                 display: `${defaultPrice} ₽`,

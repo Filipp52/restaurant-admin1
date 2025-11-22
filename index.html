@@ -87,6 +87,16 @@
 
                     <div class="form-row">
                         <div class="form-group">
+                            <label class="form-label">Категория</label>
+                            <select id="productCategory" class="form-input">
+                                <option value="">Без категории</option>
+                                <!-- Категории будут заполнены динамически -->
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
                             <label class="form-label">Тип товара *</label>
                             <select id="productType" class="form-input" required onchange="app.onProductTypeChange()">
                                 <option value="">Выберите тип</option>

@@ -189,7 +189,8 @@ class AnalyticsService {
             if (orderDate.toDateString() === date.toDateString()) {
                 const hour = orderDate.getHours();
                 if (hour >= 9 && hour <= 21) {
-                    data[hour - 9] += order.total_amount || 0;
+                    const totalAmount = order.total_amount || 0;
+                    data[hour - 9] += totalAmount;
                 }
             }
         });
@@ -207,7 +208,8 @@ class AnalyticsService {
             const dayDiff = Math.floor((today - orderDate) / (1000 * 60 * 60 * 24));
 
             if (dayDiff >= 0 && dayDiff < daysCount) {
-                data[daysCount - 1 - dayDiff] += order.total_amount || 0;
+                const totalAmount = order.total_amount || 0;
+                data[daysCount - 1 - dayDiff] += totalAmount;
             }
         });
 
@@ -226,7 +228,8 @@ class AnalyticsService {
             if (orderDate.getMonth() === date.getMonth() && orderDate.getFullYear() === date.getFullYear()) {
                 const week = Math.floor((orderDate.getDate() - 1) / 7);
                 if (week < weekCount) {
-                    data[week] += order.total_amount || 0;
+                    const totalAmount = order.total_amount || 0;
+                    data[week] += totalAmount;
                 }
             }
         });
@@ -244,7 +247,8 @@ class AnalyticsService {
             const dayIndex = Math.floor((orderDate - startDate) / (1000 * 60 * 60 * 24));
 
             if (dayIndex >= 0 && dayIndex < days) {
-                data[dayIndex] += order.total_amount || 0;
+                const totalAmount = order.total_amount || 0;
+                data[dayIndex] += totalAmount;
             }
         });
 
