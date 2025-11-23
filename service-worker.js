@@ -1,5 +1,7 @@
 // Базовый Service Worker для PWA
 const CACHE_NAME = 'restaurant-admin-v3';
+// service-worker.js - улучшенная версия
+const CACHE_NAME = 'restaurant-admin-v4';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -11,7 +13,8 @@ const urlsToCache = [
   '/js/orders-service.js',
   '/js/analytics-service.js',
   '/js/app.js',
-  '/manifest.json'
+  '/manifest.json',
+  '/browserconfig.xml'
 ];
 
 // Установка Service Worker
@@ -43,8 +46,13 @@ self.addEventListener('activate', function(event) {
   );
 });
 
-// Перехват запросов
+// Перехват запросов - улучшенная стратегия
 self.addEventListener('fetch', function(event) {
+  // Пропускаем запросы к API
+  if (event.request.url.includes('/api/')) {
+    return fetch(event.request);
+  }
+
   event.respondWith(
     caches.match(event.request)
       .then(function(response) {
@@ -52,8 +60,22 @@ self.addEventListener('fetch', function(event) {
         if (response) {
           return response;
         }
-        return fetch(event.request);
-      }
-    )
+
+        return fetch(event.request).then(function(response) {
+          // Кэшируем только успешные ответы
+          if(!response || response.status !== 200 || response.type !== 'basic') {
+            return response;
+          }
+
+          var responseToCache = response.clone();
+
+          caches.open(CACHE_NAME)
+            .then(function(cache) {
+              cache.put(event.request, responseToCache);
+            });
+
+          return response;
+        });
+      })
   );
 });
