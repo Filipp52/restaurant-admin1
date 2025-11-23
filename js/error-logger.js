@@ -35,10 +35,7 @@ class ErrorLogger {
             app_name: this.appName,
             app_version: this.appVersion,
             error: errorData.error || 'UnknownError',
-            stack_trace: errorData.stack_trace || null,
-            timestamp: new Date().toISOString(),
-            user_agent: navigator.userAgent,
-            url: window.location.href
+            stack_trace: errorData.stack_trace || null
         };
 
         console.error('🚨 Error occurred:', logEntry);
