@@ -2,7 +2,7 @@
 class RestaurantAdmin {
     constructor() {
         this.currentPage = 'analytics';
-        this.token = 'dd2813e334817761450af98ac20fe90b';
+        this.token = null;
         this.init();
     }
 
@@ -10,7 +10,6 @@ class RestaurantAdmin {
     init() {
         console.log('🚀 Restaurant Admin запущен!');
 
-        apiService.setToken(this.token);
         this.checkAuth();
         this.setupNavigation();
         this.registerServiceWorker();
@@ -139,6 +138,11 @@ class RestaurantAdmin {
     showLoginScreen() {
         document.body.classList.remove('logged-in');
         console.log('Требуется авторизация');
+
+        const tokenInput = document.getElementById('authToken');
+        if (tokenInput) {
+            tokenInput.value = '';
+        }
     }
 
     // Вход в систему
@@ -163,15 +167,26 @@ class RestaurantAdmin {
                 this.updateHeaderInfo();
                 this.updateNavigationBasedOnPermissions();
                 this.loadPage(this.currentPage);
+                console.log('Успешный вход, токен сохранен');
             } else {
                 alert('Неверный токен доступа');
                 localStorage.removeItem('restaurantToken');
                 this.token = null;
+                tokenInput.value = '';
             }
         } catch (error) {
             console.error('Ошибка входа:', error);
             errorLogger.manualLog(error);
-            alert('Ошибка подключения к серверу');
+
+            if (error.message.includes('Не удалось подключиться')) {
+                alert('Ошибка подключения к серверу. Проверьте интернет-соединение.');
+            } else {
+                alert('Ошибка подключения к серверу');
+            }
+
+            localStorage.removeItem('restaurantToken');
+            this.token = null;
+            tokenInput.value = '';
         }
     }
 
@@ -183,7 +198,13 @@ class RestaurantAdmin {
             authService.clientPoint = null;
             authService.tokenInfo = null;
             document.body.classList.remove('logged-in');
-            document.getElementById('authToken').value = '';
+
+            const tokenInput = document.getElementById('authToken');
+            if (tokenInput) {
+                tokenInput.value = '';
+            }
+
+            console.log('Успешный выход из системы');
         }
     }
 
