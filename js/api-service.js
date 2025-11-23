@@ -1,9 +1,8 @@
 // Базовый сервис для API запросов с улучшенной обработкой ошибок
 class ApiService {
     constructor() {
-        this.baseUrl = 'http://localhost:1212/api/v1';
+        this.baseUrl = '/api/v1';
         this.token = null;
-        console.log('🔧 API настроен на прокси:', this.baseUrl);
     }
 
     setToken(token) {

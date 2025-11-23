@@ -41,7 +41,7 @@ class ErrorLogger {
         console.error('🚨 Error occurred:', logEntry);
 
         try {
-            const response = await fetch('http://tastyworld-pos.ru:1212/api/v1/frontend/error', {
+            const response = await fetch('/api/v1/frontend/error', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -84,7 +84,7 @@ class ErrorLogger {
 
             for (const error of pendingErrors) {
                 try {
-                    const response = await fetch('http://tastyworld-pos.ru:1212/api/v1/frontend/error', {
+                    const response = await fetch('/api/v1/frontend/error', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
