@@ -1037,3 +1037,69 @@ body.logged-in .login-screen {
         padding: 8px 4px 6px;
     }
 }
+
+/* Стили для контейнера чекбоксов категорий */
+.categories-checkbox-container {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    max-height: 200px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* Стили для отдельного чекбокса */
+.checkbox-item {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    user-select: none;
+}
+
+.checkbox-item:hover {
+    background: var(--background);
+}
+
+.checkbox-input {
+    margin: 0;
+    margin-right: 12px;
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    accent-color: var(--primary);
+}
+
+.checkbox-label {
+    font-size: 14px;
+    color: var(--text-primary);
+    flex: 1;
+}
+
+/* Стили для состояния загрузки и ошибок */
+.loading-small {
+    text-align: center;
+    padding: 20px;
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+.no-categories {
+    text-align: center;
+    padding: 20px;
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-style: italic;
+}
+
+.error-small {
+    text-align: center;
+    padding: 20px;
+    color: var(--error);
+    font-size: 14px;
+}

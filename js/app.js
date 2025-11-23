@@ -835,6 +835,38 @@ class RestaurantAdmin {
         this.openProductModal('edit', productId);
     }
 
+    // Заполнить чекбоксы категорий для товара
+    async fillCategoriesCheckboxes() {
+        const container = document.getElementById('categoriesCheckboxContainer');
+        if (!container) return;
+
+        try {
+            const categories = await menuService.getCategories();
+
+            if (!categories || categories.length === 0) {
+                container.innerHTML = '<div class="no-categories">Нет доступных категорий</div>';
+                return;
+            }
+
+            container.innerHTML = categories.map(category => `
+                <label class="checkbox-item">
+                    <input type="checkbox" name="productCategories" value="${category.menu_category_id}"
+                           class="checkbox-input" onchange="app.toggleCategory(this)">
+                    <span class="checkbox-label">${this.escapeHtml(category.name)}</span>
+                </label>
+            `).join('');
+        } catch (error) {
+            console.error('Ошибка загрузки категорий для чекбоксов:', error);
+            container.innerHTML = '<div class="error-small">Ошибка загрузки категорий</div>';
+        }
+    }
+
+    // Обработчик изменения состояния чекбокса
+    toggleCategory(checkbox) {
+        // Можно добавить дополнительную логику при необходимости
+        console.log('Категория изменена:', checkbox.value, checkbox.checked);
+    }
+
     // Открыть модальное окно товара
     async openProductModal(mode, productId = null) {
         const modal = document.getElementById('productModal');
@@ -842,16 +874,10 @@ class RestaurantAdmin {
 
         this.fillProductTypeSelect();
         this.fillTaxSelect();
-        await this.fillCategoriesSelect(); // Загружаем категории для выбора
+        await this.fillCategoriesCheckboxes(); // Загружаем категории как чекбоксы
 
         document.getElementById('productForm').reset();
         document.getElementById('imageFileName').textContent = 'Файл не выбран';
-
-        // Сбрасываем выбор категорий
-        const categoriesSelect = document.getElementById('productCategories');
-        if (categoriesSelect) {
-            categoriesSelect.selectedIndex = -1;
-        }
 
         if (mode === 'add') {
             title.textContent = 'Добавить товар';
@@ -905,16 +931,23 @@ class RestaurantAdmin {
             document.getElementById('productMeasure').value = product.qty_measure;
             document.getElementById('productActive').checked = product.is_active;
 
-            // Загружаем и устанавливаем категории товара
+            // Загружаем и устанавливаем категории товара в чекбоксы
             const productCategories = await menuService.getProductCategories(productId);
-            const categoriesSelect = document.getElementById('productCategories');
 
-            if (categoriesSelect && productCategories.length > 0) {
-                for (let option of categoriesSelect.options) {
-                    option.selected = productCategories.some(cat =>
-                        cat.menu_category_id.toString() === option.value
-                    );
-                }
+            // Сбрасываем все чекбоксы
+            const checkboxes = document.querySelectorAll('input[name="productCategories"]');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = false;
+            });
+
+            // Устанавливаем выбранные категории
+            if (productCategories.length > 0) {
+                productCategories.forEach(category => {
+                    const checkbox = document.querySelector(`input[name="productCategories"][value="${category.menu_category_id}"]`);
+                    if (checkbox) {
+                        checkbox.checked = true;
+                    }
+                });
             }
 
         } catch (error) {
@@ -993,7 +1026,7 @@ class RestaurantAdmin {
 
         const form = document.getElementById('productForm');
 
-        if (!form.checkValability()) {
+        if (!form.checkValidity()) {
             alert('Заполните все обязательные поля');
             return;
         }
@@ -1013,11 +1046,9 @@ class RestaurantAdmin {
         const productId = document.getElementById('productId').value;
         const imageFile = document.getElementById('productImage').files[0];
 
-        // Получаем выбранные категории
-        const categoriesSelect = document.getElementById('productCategories');
-        const selectedCategories = Array.from(categoriesSelect.selectedOptions).map(option =>
-            parseInt(option.value)
-        );
+        // Получаем выбранные категории из чекбоксов
+        const selectedCategories = Array.from(document.querySelectorAll('input[name="productCategories"]:checked'))
+            .map(checkbox => parseInt(checkbox.value));
 
         try {
             let savedProduct;
