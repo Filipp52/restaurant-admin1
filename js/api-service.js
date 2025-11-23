@@ -1,7 +1,7 @@
 // Базовый сервис для API запросов с улучшенной обработкой ошибок
 class ApiService {
     constructor() {
-        this.baseUrl = 'http://localhost:3001/api';
+        this.baseUrl = 'http://localhost:1212/api/v1';
         this.token = null;
         console.log('🔧 API настроен на прокси:', this.baseUrl);
     }
@@ -62,7 +62,7 @@ class ApiService {
             }
 
             if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
-                throw new Error('Не удалось подключиться к прокси-серверу. Убедитесь, что прокси запущен на localhost:3001');
+                throw new Error('Не удалось подключиться к сервису.');
             }
 
             throw error;
@@ -128,19 +128,6 @@ class ApiService {
         }
 
         return response;
-    }
-
-    // Проверка здоровья прокси
-    async healthCheck() {
-        try {
-            const response = await fetch('http://localhost:3001/health');
-            const data = await response.json();
-            console.log('🏥 Проверка здоровья прокси:', data);
-            return data.status === 'OK';
-        } catch (error) {
-            console.error('❌ Прокси-сервер недоступен');
-            return false;
-        }
     }
 }
 
