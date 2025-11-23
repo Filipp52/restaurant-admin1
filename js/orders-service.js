@@ -1,4 +1,4 @@
-// Сервис работы с заказами с улучшенной логикой экспорта
+// Сервис работы с заказами с исправленными периодами
 class OrdersService {
     // Получение завершенных заказов за период
     async getCompletedOrders(from, till = null) {
@@ -120,7 +120,7 @@ class OrdersService {
         }
     }
 
-    // Получение заказов за период
+    // Получение заказов за период с исправленной логикой
     async getOrdersByPeriod(period) {
         try {
             const now = new Date();
@@ -128,31 +128,24 @@ class OrdersService {
 
             switch(period) {
                 case 'day':
-                    from = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-                    till = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59).toISOString();
+                    // СУТКИ: последние 24 часа
+                    from = new Date(now - 24 * 60 * 60 * 1000).toISOString();
+                    till = now.toISOString();
                     break;
                 case 'week':
-                    const weekStart = new Date(now);
-                    weekStart.setDate(now.getDate() - now.getDay() + 1); // Понедельник
-                    weekStart.setHours(0, 0, 0, 0);
-
-                    const weekEnd = new Date(weekStart);
-                    weekEnd.setDate(weekStart.getDate() + 6); // Воскресенье
-                    weekEnd.setHours(23, 59, 59, 999);
-
-                    from = weekStart.toISOString();
-                    till = weekEnd.toISOString();
+                    // НЕДЕЛЯ: последние 7 дней
+                    from = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
+                    till = now.toISOString();
                     break;
                 case 'month':
+                    // МЕСЯЦ: с 1 числа по текущий день
                     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-                    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-
+                    till = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59).toISOString();
                     from = monthStart.toISOString();
-                    till = monthEnd.toISOString();
                     break;
                 default:
-                    from = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-                    till = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59).toISOString();
+                    from = new Date(now - 24 * 60 * 60 * 1000).toISOString();
+                    till = now.toISOString();
             }
 
             console.log(`📅 Period ${period}: from ${from} to ${till}`);

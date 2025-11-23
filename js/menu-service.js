@@ -338,6 +338,37 @@ class MenuService {
         }
     }
 
+    // Получение количества товаров в категории
+    async getCategoryProductsCount(categoryId) {
+        try {
+            const products = await this.getCategoryProducts(categoryId);
+            return products.length;
+        } catch (error) {
+            console.error('Failed to get category products count:', error);
+            return 0;
+        }
+    }
+
+    // Получение всех категорий с количеством товаров
+    async getCategoriesWithCount(onlyActive = false) {
+        try {
+            const categories = await this.getCategories(onlyActive);
+            const categoriesWithCount = await Promise.all(
+                categories.map(async (category) => {
+                    const count = await this.getCategoryProductsCount(category.menu_category_id);
+                    return {
+                        ...category,
+                        products_count: count
+                    };
+                })
+            );
+            return categoriesWithCount;
+        } catch (error) {
+            console.error('Failed to get categories with count:', error);
+            return [];
+        }
+    }
+
     // ========== РАБОТА С ТОППИНГАМИ ==========
 
     // Получение всех топпингов

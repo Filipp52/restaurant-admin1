@@ -3,6 +3,7 @@ class RestaurantAdmin {
     constructor() {
         this.currentPage = 'analytics';
         this.token = 'dd2813e334817761450af98ac20fe90b';
+        this.allToppings = []; // Для поиска в топпингах
         this.init();
     }
 
@@ -281,7 +282,7 @@ class RestaurantAdmin {
         mainContent.innerHTML = `
             <div class="analytics-controls">
                 <div class="period-selector">
-                    <button class="period-btn active" data-period="day" onclick="app.switchPeriod('day', this)">День</button>
+                    <button class="period-btn active" data-period="day" onclick="app.switchPeriod('day', this)">Сутки</button>
                     <button class="period-btn" data-period="week" onclick="app.switchPeriod('week', this)">Неделя</button>
                     <button class="period-btn" data-period="month" onclick="app.switchPeriod('month', this)">Месяц</button>
                     <button class="period-btn" data-period="custom" onclick="app.switchPeriod('custom', this)">
@@ -306,7 +307,7 @@ class RestaurantAdmin {
             });
         }, 100);
 
-        // Показываем начальные данные за день
+        // Показываем начальные данные за сутки
         this.renderAnalyticsContent('day');
     }
 
@@ -663,7 +664,7 @@ class RestaurantAdmin {
         }
 
         try {
-            const categories = await menuService.getCategories();
+            const categories = await menuService.getCategoriesWithCount();
             const canWriteMenu = authService.hasAccess('MENU_WRITE');
 
             if (!categories || categories.length === 0) {
@@ -688,7 +689,7 @@ class RestaurantAdmin {
                             </span>
                         </div>
                         <div class="category-meta">
-                            <small>ID: ${category.menu_category_id}</small>
+                            <small>ID: ${category.menu_category_id} | Товаров: ${category.products_count || 0}</small>
                         </div>
                     </div>
                     ${canWriteMenu ? `
@@ -736,50 +737,87 @@ class RestaurantAdmin {
                 return;
             }
 
-            container.innerHTML = toppings.map(topping => {
-                const priceInfo = menuService.getToppingPriceInfo(topping);
+            // Сохраняем оригинальные данные для поиска
+            this.allToppings = toppings;
 
-                return `
-                <div class="product-card" data-topping-id="${topping.product_topping_id}">
-                    <div class="product-info">
-                        <div class="product-header">
-                            <h4 class="product-name">${this.escapeHtml(topping.name)}</h4>
-                            <div class="product-price">
-                                <div class="price-main">${priceInfo.display}</div>
-                                ${priceInfo.details ? `<div class="price-details">${priceInfo.details}</div>` : ''}
-                            </div>
-                        </div>
-
-                        <div class="product-meta">
-                            <span class="product-category">Товар: ${this.escapeHtml(topping.product_name)}</span>
-                            <span class="product-unit ${topping.is_active ? 'active' : 'inactive'}">
-                                ${topping.is_active ? 'Активен' : 'Неактивен'}
-                            </span>
-                        </div>
-
-                        <div class="product-details">
-                            <small>Мин: ${topping.qty_min}${menuService.getMeasureText(topping.qty_measure)} | Макс: ${topping.qty_max}${menuService.getMeasureText(topping.qty_measure)} | По умолч: ${topping.qty_default}${menuService.getMeasureText(topping.qty_measure)}</small>
-                        </div>
-                    </div>
-
-                    ${canWriteMenu ? `
-                        <div class="product-actions">
-                            <button class="btn-icon" onclick="app.editTopping(${topping.product_topping_id})" title="Редактировать">
-                                ✏️
-                            </button>
-                            <button class="btn-icon btn-danger" onclick="app.deleteTopping(${topping.product_topping_id})" title="Удалить">
-                                🗑️
-                            </button>
-                        </div>
-                    ` : ''}
+            container.innerHTML = `
+                <div class="search-box" style="margin-bottom: 16px;">
+                    <input type="text" id="toppingSearch" placeholder="🔍 Поиск по названию топпинга или товара..."
+                           style="width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px;"
+                           oninput="app.filterToppings()">
                 </div>
-                `;
-            }).join('');
+                <div id="toppingsList">
+                    ${this.renderToppingsList(toppings, canWriteMenu)}
+                </div>
+            `;
         } catch (error) {
             console.error('Ошибка загрузки топпингов:', error);
             errorLogger.manualLog(error);
             container.innerHTML = '<div class="error-state">Ошибка загрузки топпингов</div>';
         }
+    }
+
+    // Метод для рендера списка топпингов
+    renderToppingsList(toppings, canWriteMenu) {
+        if (!toppings || toppings.length === 0) {
+            return '<div class="empty-state"><p>Топпинги не найдены</p></div>';
+        }
+
+        return toppings.map(topping => {
+            const priceInfo = menuService.getToppingPriceInfo(topping);
+
+            return `
+            <div class="product-card" data-topping-id="${topping.product_topping_id}">
+                <div class="product-info">
+                    <div class="product-header">
+                        <h4 class="product-name">${this.escapeHtml(topping.name)}</h4>
+                        <div class="product-price">
+                            <div class="price-main">${priceInfo.display}</div>
+                            ${priceInfo.details ? `<div class="price-details">${priceInfo.details}</div>` : ''}
+                        </div>
+                    </div>
+
+                    <div class="product-meta">
+                        <span class="product-category">Товар: ${this.escapeHtml(topping.product_name)}</span>
+                        <span class="product-unit ${topping.is_active ? 'active' : 'inactive'}">
+                            ${topping.is_active ? 'Активен' : 'Неактивен'}
+                        </span>
+                    </div>
+
+                    <div class="product-details">
+                        <small>Мин: ${topping.qty_min}${menuService.getMeasureText(topping.qty_measure)} | Макс: ${topping.qty_max}${menuService.getMeasureText(topping.qty_measure)} | По умолч: ${topping.qty_default}${menuService.getMeasureText(topping.qty_measure)}</small>
+                    </div>
+                </div>
+
+                ${canWriteMenu ? `
+                    <div class="product-actions">
+                        <button class="btn-icon" onclick="app.editTopping(${topping.product_topping_id})" title="Редактировать">
+                            ✏️
+                        </button>
+                        <button class="btn-icon btn-danger" onclick="app.deleteTopping(${topping.product_topping_id})" title="Удалить">
+                            🗑️
+                        </button>
+                    </div>
+                ` : ''}
+            </div>
+            `;
+        }).join('');
+    }
+
+    // Метод для фильтрации топпингов
+    filterToppings() {
+        const searchTerm = document.getElementById('toppingSearch').value.toLowerCase();
+        const toppingsList = document.getElementById('toppingsList');
+
+        if (!this.allToppings || !toppingsList) return;
+
+        const filteredToppings = this.allToppings.filter(topping =>
+            topping.name.toLowerCase().includes(searchTerm) ||
+            (topping.product_name && topping.product_name.toLowerCase().includes(searchTerm))
+        );
+
+        const canWriteMenu = authService.hasAccess('MENU_WRITE');
+        toppingsList.innerHTML = this.renderToppingsList(filteredToppings, canWriteMenu);
     }
 
     // ========== ФУНКЦИОНАЛ РАБОТЫ С ТОВАРАМИ ==========
@@ -958,7 +996,10 @@ class RestaurantAdmin {
             }
 
             this.closeProductModal();
-            this.loadPage('menu');
+
+            // Оптимизированное обновление вместо полной перезагрузки
+            await this.renderProducts();
+
             alert('Товар успешно сохранен!');
 
         } catch (error) {
@@ -981,7 +1022,10 @@ class RestaurantAdmin {
 
         try {
             await menuService.deleteProduct(productId);
-            this.loadPage('menu');
+
+            // Оптимизированное обновление вместо полной перезагрузки
+            await this.renderProducts();
+
             alert('Товар успешно удален!');
         } catch (error) {
             console.error('Ошибка удаления товара:', error);
@@ -1085,7 +1129,10 @@ class RestaurantAdmin {
             }
 
             this.closeCategoryModal();
-            this.loadPage('menu');
+
+            // Частичное обновление вместо полной перезагрузки
+            await this.renderCategories();
+
             alert('Категория успешно сохранена!');
 
         } catch (error) {
@@ -1108,7 +1155,10 @@ class RestaurantAdmin {
 
         try {
             await menuService.deleteCategory(categoryId);
-            this.loadPage('menu');
+
+            // Частичное обновление вместо полной перезагрузки
+            await this.renderCategories();
+
             alert('Категория успешно удалена!');
         } catch (error) {
             console.error('Ошибка удаления категории:', error);
@@ -1243,7 +1293,10 @@ class RestaurantAdmin {
             }
 
             this.closeToppingModal();
-            this.loadPage('menu');
+
+            // Частичное обновление вместо полной перезагрузки
+            await this.renderToppings();
+
             alert('Топпинг успешно сохранен!');
 
         } catch (error) {
@@ -1266,7 +1319,10 @@ class RestaurantAdmin {
 
         try {
             await menuService.deleteTopping(toppingId);
-            this.loadPage('menu');
+
+            // Частичное обновление вместо полной перезагрузки
+            await this.renderToppings();
+
             alert('Топпинг успешно удален!');
         } catch (error) {
             console.error('Ошибка удаления топпинга:', error);

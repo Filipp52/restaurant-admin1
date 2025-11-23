@@ -1,4 +1,4 @@
-// Сервис аналитики и отчетов с реальными данными и улучшенным функционалом
+// Сервис аналитики и отчетов с исправленными графиками
 class AnalyticsService {
     constructor() {
         this.charts = new Map();
@@ -100,18 +100,21 @@ class AnalyticsService {
 
         switch(period) {
             case 'day':
-                labels = this.generateDayLabels();
-                data = this.groupOrdersByHour(orders, now);
+                // СУТКИ: последние 24 часа от текущего времени
+                labels = this.generate24hLabels(now);
+                data = this.groupOrdersBy24h(orders, now);
                 break;
 
             case 'week':
-                labels = this.generateWeekLabels();
-                data = this.groupOrdersByDay(orders, 7);
+                // НЕДЕЛЯ: последние 7 дней от текущего дня
+                labels = this.generateWeekLabels(now);
+                data = this.groupOrdersBy7Days(orders, now);
                 break;
 
             case 'month':
-                labels = this.generateMonthLabels();
-                data = this.groupOrdersByWeek(orders, now);
+                // МЕСЯЦ: с 1 числа по текущий день
+                labels = this.generateMonthLabels(now);
+                data = this.groupOrdersByMonth(orders, now);
                 break;
 
             case 'custom':
@@ -126,108 +129,119 @@ class AnalyticsService {
                 break;
 
             default:
-                labels = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
-                data = [0, 0, 0, 0, 0, 0, 0];
+                labels = ['Нет данных'];
+                data = [0];
         }
 
         return { labels, data };
     }
 
-    // Генерация меток для дня
-    generateDayLabels() {
+    // Генерация меток для 24 часов (последние 24 часа от текущего времени)
+    generate24hLabels(now) {
         const labels = [];
-        for (let i = 9; i <= 21; i++) {
-            labels.push(`${i}:00`);
+        for (let i = 23; i >= 0; i--) {
+            const hour = new Date(now);
+            hour.setHours(now.getHours() - i);
+            labels.push(`${hour.getHours().toString().padStart(2, '0')}:00`);
         }
         return labels;
     }
 
-    // Генерация меток для недели
-    generateWeekLabels() {
-        return ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+    // Группировка заказов по 24 часам
+    groupOrdersBy24h(orders, now) {
+        const data = new Array(24).fill(0);
+        const startTime = new Date(now);
+        startTime.setHours(now.getHours() - 23, 0, 0, 0);
+
+        orders.forEach(order => {
+            const orderDate = new Date(order.draft_at || order.completed_at);
+            if (orderDate >= startTime && orderDate <= now) {
+                const hoursDiff = Math.floor((orderDate - startTime) / (1000 * 60 * 60));
+                if (hoursDiff >= 0 && hoursDiff < 24) {
+                    data[hoursDiff] += order.total_amount || 0;
+                }
+            }
+        });
+
+        return data;
     }
 
-    // Генерация меток для месяца
-    generateMonthLabels() {
-        const weeks = [];
-        const now = new Date();
-        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-        const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    // Генерация меток для недели (последние 7 дней)
+    generateWeekLabels(now) {
+        const labels = [];
+        const days = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
 
-        let currentWeek = 1;
-        for (let d = new Date(firstDay); d <= lastDay; d.setDate(d.getDate() + 7)) {
-            weeks.push(`Неделя ${currentWeek}`);
-            currentWeek++;
+        for (let i = 6; i >= 0; i--) {
+            const date = new Date(now);
+            date.setDate(now.getDate() - i);
+            labels.push(`${days[date.getDay()]} ${date.getDate()}`);
         }
+        return labels;
+    }
 
-        return weeks.length > 0 ? weeks : ['Неделя 1'];
+    // Группировка заказов по 7 дням
+    groupOrdersBy7Days(orders, now) {
+        const data = new Array(7).fill(0);
+        const startTime = new Date(now);
+        startTime.setDate(now.getDate() - 6);
+        startTime.setHours(0, 0, 0, 0);
+
+        orders.forEach(order => {
+            const orderDate = new Date(order.draft_at || order.completed_at);
+            if (orderDate >= startTime && orderDate <= now) {
+                const daysDiff = Math.floor((orderDate - startTime) / (1000 * 60 * 60 * 24));
+                if (daysDiff >= 0 && daysDiff < 7) {
+                    data[daysDiff] += order.total_amount || 0;
+                }
+            }
+        });
+
+        return data;
+    }
+
+    // Генерация меток для месяца (с 1 по текущий день)
+    generateMonthLabels(now) {
+        const labels = [];
+        const currentDay = now.getDate();
+
+        for (let day = 1; day <= currentDay; day++) {
+            labels.push(day.toString());
+        }
+        return labels;
+    }
+
+    // Группировка заказов по дням месяца
+    groupOrdersByMonth(orders, now) {
+        const currentDay = now.getDate();
+        const data = new Array(currentDay).fill(0);
+        const startTime = new Date(now.getFullYear(), now.getMonth(), 1);
+        const endTime = new Date(now.getFullYear(), now.getMonth(), currentDay, 23, 59, 59);
+
+        orders.forEach(order => {
+            const orderDate = new Date(order.draft_at || order.completed_at);
+            if (orderDate >= startTime && orderDate <= endTime) {
+                const day = orderDate.getDate();
+                if (day >= 1 && day <= currentDay) {
+                    data[day - 1] += order.total_amount || 0;
+                }
+            }
+        });
+
+        return data;
     }
 
     // Генерация меток для кастомного периода
     generateDateRangeLabels(startDate, endDate) {
         const labels = [];
         const current = new Date(startDate);
+        const end = new Date(endDate);
 
-        while (current <= endDate) {
+        while (current <= end) {
             labels.push(current.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }));
             current.setDate(current.getDate() + 1);
         }
 
         return labels;
-    }
-
-    // Группировка заказов по часам
-    groupOrdersByHour(orders, date) {
-        const data = new Array(13).fill(0); // 9:00 - 21:00
-
-        orders.forEach(order => {
-            const orderDate = new Date(order.draft_at || order.completed_at);
-            if (orderDate.toDateString() === date.toDateString()) {
-                const hour = orderDate.getHours();
-                if (hour >= 9 && hour <= 21) {
-                    data[hour - 9] += order.total_amount || 0;
-                }
-            }
-        });
-
-        return data;
-    }
-
-    // Группировка заказов по дням
-    groupOrdersByDay(orders, daysCount) {
-        const data = new Array(daysCount).fill(0);
-        const today = new Date();
-
-        orders.forEach(order => {
-            const orderDate = new Date(order.draft_at || order.completed_at);
-            const dayDiff = Math.floor((today - orderDate) / (1000 * 60 * 60 * 24));
-
-            if (dayDiff >= 0 && dayDiff < daysCount) {
-                data[daysCount - 1 - dayDiff] += order.total_amount || 0;
-            }
-        });
-
-        return data;
-    }
-
-    // Группировка заказов по неделям
-    groupOrdersByWeek(orders, date) {
-        const firstDay = new Date(date.getFullYear(), date.getMonth(), 1);
-        const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0);
-        const weekCount = Math.ceil((lastDay.getDate() - firstDay.getDate() + 1) / 7);
-        const data = new Array(weekCount).fill(0);
-
-        orders.forEach(order => {
-            const orderDate = new Date(order.draft_at || order.completed_at);
-            if (orderDate.getMonth() === date.getMonth() && orderDate.getFullYear() === date.getFullYear()) {
-                const week = Math.floor((orderDate.getDate() - 1) / 7);
-                if (week < weekCount) {
-                    data[week] += order.total_amount || 0;
-                }
-            }
-        });
-
-        return data;
     }
 
     // Группировка заказов по диапазону дат
@@ -264,6 +278,38 @@ class AnalyticsService {
         });
 
         return { start: minDate, end: maxDate };
+    }
+
+    // Получение текста для периода
+    getPeriodText(period) {
+        const texts = {
+            'day': 'сутки',
+            'week': 'неделю',
+            'month': 'месяц',
+            'custom': 'выбранный период'
+        };
+        return texts[period] || 'период';
+    }
+
+    // Очистка графиков
+    destroyCharts() {
+        this.charts.forEach(chart => {
+            try {
+                chart.destroy();
+            } catch (error) {
+                console.warn('Error destroying chart:', error);
+            }
+        });
+        this.charts.clear();
+
+        if (this.datePicker && typeof this.datePicker.destroy === 'function') {
+            try {
+                this.datePicker.destroy();
+            } catch (error) {
+                console.warn('Error destroying date picker:', error);
+            }
+            this.datePicker = null;
+        }
     }
 
     // Экспорт данных
@@ -318,38 +364,6 @@ class AnalyticsService {
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-        }
-    }
-
-    // Получение текста для периода
-    getPeriodText(period) {
-        const texts = {
-            'day': 'день',
-            'week': 'неделю',
-            'month': 'месяц',
-            'custom': 'выбранный период'
-        };
-        return texts[period] || 'период';
-    }
-
-    // Очистка графиков
-    destroyCharts() {
-        this.charts.forEach(chart => {
-            try {
-                chart.destroy();
-            } catch (error) {
-                console.warn('Error destroying chart:', error);
-            }
-        });
-        this.charts.clear();
-
-        if (this.datePicker && typeof this.datePicker.destroy === 'function') {
-            try {
-                this.datePicker.destroy();
-            } catch (error) {
-                console.warn('Error destroying date picker:', error);
-            }
-            this.datePicker = null;
         }
     }
 }
