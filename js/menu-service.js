@@ -8,6 +8,8 @@ class MenuService {
             'NOT_ALCOHOL_BEER_MARKED'
         ];
         this.categories = [];
+        this.products = [];
+        this.toppings = [];
     }
 
     // ========== РАБОТА С ТОВАРАМИ ==========
@@ -16,7 +18,8 @@ class MenuService {
     async getProducts(onlyActive = false) {
         try {
             const products = await apiService.get(`/menu/products?only_active=${onlyActive}`);
-            return products.map(product => this.enrichProductData(product));
+            this.products = products.map(product => this.enrichProductData(product));
+            return this.products;
         } catch (error) {
             console.error('Failed to get products:', error);
             errorLogger.manualLog(error);
@@ -29,7 +32,7 @@ class MenuService {
         const enriched = { ...product };
 
         // Расчет цены для отображения
-        if (product.qty_measure === 'GRAMS' && product.qty_default > 0) {
+        if (product.qty_measure === 'GRAMS') {
             // Для весовых товаров показываем цену за количество по умолчанию
             enriched.display_price = (product.unit_price * product.qty_default).toFixed(2);
             enriched.display_unit = '₽';
@@ -97,13 +100,17 @@ class MenuService {
         }
     }
 
-    // Редактирование товара
+    // Редактирование товара - исправляем проблему с дублированием имени
     async updateProduct(productId, productData) {
         try {
             const requestBody = {};
 
-            // Добавляем только те поля, которые были переданы
-            if (productData.name !== undefined) requestBody.name = productData.name;
+            // Добавляем только те поля, которые были переданы и изменились
+            const currentProduct = await this.getProduct(productId);
+
+            if (productData.name !== undefined && productData.name !== currentProduct.name) {
+                requestBody.name = productData.name;
+            }
             if (productData.type !== undefined) requestBody.type = productData.type;
             if (productData.tax !== undefined) requestBody.tax = productData.tax;
             if (productData.qty_min !== undefined) requestBody.qty_min = productData.qty_min;
@@ -111,6 +118,12 @@ class MenuService {
             if (productData.qty_default !== undefined) requestBody.qty_default = productData.qty_default;
             if (productData.unit_price !== undefined) requestBody.unit_price = parseFloat(productData.unit_price);
             if (productData.is_active !== undefined) requestBody.is_active = productData.is_active;
+
+            // Если тело запроса пустое, ничего не отправляем
+            if (Object.keys(requestBody).length === 0) {
+                console.log('No changes detected for product update');
+                return currentProduct;
+            }
 
             return await apiService.patch(`/menu/products/${productId}`, requestBody);
         } catch (error) {
@@ -134,6 +147,10 @@ class MenuService {
     // Загрузка изображения товара
     async uploadProductImage(productId, file) {
         try {
+            // Проверяем формат файла
+            if (!file.type.startsWith('image/')) {
+                throw new Error('Файл должен быть изображением');
+            }
             return await apiService.uploadFile(`/menu/products/${productId}/image`, file);
         } catch (error) {
             console.error('Failed to upload product image:', error);
@@ -194,13 +211,24 @@ class MenuService {
         }
     }
 
-    // Редактирование категории
+    // Редактирование категории - исправляем проблему с дублированием имени
     async updateCategory(categoryId, categoryData) {
         try {
             const requestBody = {};
 
-            if (categoryData.name !== undefined) requestBody.name = categoryData.name;
+            // Добавляем только те поля, которые были переданы и изменились
+            const currentCategory = await this.getCategory(categoryId);
+
+            if (categoryData.name !== undefined && categoryData.name !== currentCategory.name) {
+                requestBody.name = categoryData.name;
+            }
             if (categoryData.is_active !== undefined) requestBody.is_active = categoryData.is_active;
+
+            // Если тело запроса пустое, ничего не отправляем
+            if (Object.keys(requestBody).length === 0) {
+                console.log('No changes detected for category update');
+                return currentCategory;
+            }
 
             return await apiService.patch(`/menu/categories/${categoryId}`, requestBody);
         } catch (error) {
@@ -216,6 +244,32 @@ class MenuService {
             return await apiService.delete(`/menu/categories/${categoryId}`);
         } catch (error) {
             console.error('Failed to delete category:', error);
+            errorLogger.manualLog(error);
+            throw error;
+        }
+    }
+
+    // Загрузка изображения категории (только PNG)
+    async uploadCategoryImage(categoryId, file) {
+        try {
+            // Проверяем формат файла - только PNG
+            if (file.type !== 'image/png') {
+                throw new Error('Файл должен быть в формате PNG');
+            }
+            return await apiService.uploadFile(`/menu/categories/${categoryId}/image`, file);
+        } catch (error) {
+            console.error('Failed to upload category image:', error);
+            errorLogger.manualLog(error);
+            throw error;
+        }
+    }
+
+    // Получение информации об изображении категории
+    async getCategoryImageInfo(categoryId) {
+        try {
+            return await apiService.get(`/menu/categories/${categoryId}/image/info`);
+        } catch (error) {
+            console.error('Failed to get category image info:', error);
             errorLogger.manualLog(error);
             throw error;
         }
@@ -259,85 +313,137 @@ class MenuService {
         }
     }
 
-    // ========== РАБОТА С КАТЕГОРИЯМИ ТОВАРОВ ==========
-
-    // Получение всех товаров с информацией о категориях
-    async getProductsWithCategories(onlyActive = false) {
+    // Получение всех категорий товара
+    async getProductCategories(productId) {
         try {
-            const [products, categories] = await Promise.all([
-                this.getProducts(onlyActive),
-                this.getCategories(onlyActive)
-            ]);
+            const allCategories = await this.getCategories();
+            const productCategories = [];
 
-            // Создаем маппинг товаров по категориям
-            const productsByCategory = new Map();
-
-            // Загружаем товары для каждой категории
-            for (const category of categories) {
+            for (const category of allCategories) {
                 try {
-                    const categoryProducts = await this.getCategoryProducts(category.menu_category_id, onlyActive);
-                    productsByCategory.set(category.menu_category_id, categoryProducts);
+                    const categoryProducts = await this.getCategoryProducts(category.menu_category_id);
+                    if (categoryProducts.some(p => p.product_id === productId)) {
+                        productCategories.push(category);
+                    }
                 } catch (error) {
-                    console.warn(`Failed to load products for category ${category.menu_category_id}:`, error);
-                    productsByCategory.set(category.menu_category_id, []);
+                    console.warn(`Failed to check category ${category.menu_category_id} for product ${productId}:`, error);
                 }
             }
 
-            // Создаем маппинг категории для каждого товара
-            const productCategoryMap = new Map();
-            for (const [categoryId, categoryProducts] of productsByCategory) {
-                for (const product of categoryProducts) {
-                    productCategoryMap.set(product.product_id, categoryId);
+            return productCategories;
+        } catch (error) {
+            console.error('Failed to get product categories:', error);
+            errorLogger.manualLog(error);
+            return [];
+        }
+    }
+
+    // ========== РАБОТА С ТОППИНГАМИ ==========
+
+    // Получение всех топпингов
+    async getToppings(onlyActive = false) {
+        try {
+            // Получаем все товары для получения их топпингов
+            const products = await this.getProducts(onlyActive);
+            const allToppings = [];
+
+            for (const product of products) {
+                try {
+                    const toppings = await apiService.get(`/menu/product_toppings?product_id=${product.product_id}&only_active=${onlyActive}`);
+                    allToppings.push(...toppings.map(topping => ({
+                        ...topping,
+                        product_name: product.name
+                    })));
+                } catch (error) {
+                    console.warn(`Failed to get toppings for product ${product.product_id}:`, error);
                 }
             }
 
-            // Обогащаем товары информацией о категории
-            const enrichedProducts = products.map(product => ({
-                ...product,
-                category_id: productCategoryMap.get(product.product_id) || null
-            }));
+            this.toppings = allToppings;
+            return allToppings;
+        } catch (error) {
+            console.error('Failed to get toppings:', error);
+            errorLogger.manualLog(error);
+            return [];
+        }
+    }
 
-            return {
-                products: enrichedProducts,
-                categories,
-                productsByCategory
+    // Получение топпинга по ID
+    async getTopping(toppingId) {
+        try {
+            return await apiService.get(`/menu/product_toppings/${toppingId}`);
+        } catch (error) {
+            console.error('Failed to get topping:', error);
+            errorLogger.manualLog(error);
+            throw error;
+        }
+    }
+
+    // Создание топпинга
+    async createTopping(toppingData) {
+        try {
+            // Валидация данных
+            if (!toppingData.name || toppingData.name.trim() === '') {
+                throw new Error('Название топпинга не может быть пустым');
+            }
+            if (toppingData.qty_min < 0) {
+                throw new Error('Минимальное количество не может быть отрицательным');
+            }
+            if (toppingData.qty_max <= toppingData.qty_min) {
+                throw new Error('Максимальное количество должно быть больше минимального');
+            }
+            if (toppingData.qty_default < toppingData.qty_min || toppingData.qty_default > toppingData.qty_max) {
+                throw new Error('Количество по умолчанию должно быть между минимальным и максимальным');
+            }
+            if (toppingData.unit_price < 0) {
+                throw new Error('Цена не может быть отрицательной');
+            }
+
+            const requestBody = {
+                product_id: parseInt(toppingData.product_id),
+                name: toppingData.name,
+                qty_measure: toppingData.qty_measure,
+                qty_min: parseInt(toppingData.qty_min),
+                qty_max: parseInt(toppingData.qty_max),
+                qty_default: parseInt(toppingData.qty_default),
+                unit_price: parseFloat(toppingData.unit_price),
+                is_active: toppingData.is_active !== undefined ? toppingData.is_active : true
             };
+
+            return await apiService.post('/menu/product_toppings', requestBody);
         } catch (error) {
-            console.error('Failed to get products with categories:', error);
+            console.error('Failed to create topping:', error);
             errorLogger.manualLog(error);
             throw error;
         }
     }
 
-    // Получение категории товара
-    getProductCategory(productId, productsByCategory) {
-        for (const [categoryId, products] of productsByCategory) {
-            if (products.some(p => p.product_id === productId)) {
-                return categoryId;
-            }
-        }
-        return null;
-    }
-
-    // Добавление товара в категорию
-    async addProductToCategory(productId, categoryId) {
+    // Редактирование топпинга
+    async updateTopping(toppingId, toppingData) {
         try {
-            return await apiService.patch(`/menu/categories/${categoryId}/products`, {
-                products_id: [productId]
-            });
+            const requestBody = {};
+
+            if (toppingData.name !== undefined) requestBody.name = toppingData.name;
+            if (toppingData.qty_min !== undefined) requestBody.qty_min = toppingData.qty_min;
+            if (toppingData.qty_max !== undefined) requestBody.qty_max = toppingData.qty_max;
+            if (toppingData.qty_default !== undefined) requestBody.qty_default = toppingData.qty_default;
+            if (toppingData.unit_price !== undefined) requestBody.unit_price = parseFloat(toppingData.unit_price);
+            if (toppingData.is_active !== undefined) requestBody.is_active = toppingData.is_active;
+
+            return await apiService.patch(`/menu/product_toppings/${toppingId}`, requestBody);
         } catch (error) {
-            console.error('Failed to add product to category:', error);
+            console.error('Failed to update topping:', error);
             errorLogger.manualLog(error);
             throw error;
         }
     }
 
-    // Удаление товара из категории
-    async removeProductFromCategory(productId, categoryId) {
+    // Удаление топпинга
+    async deleteTopping(toppingId) {
         try {
-            return await apiService.delete(`/menu/categories/${categoryId}/products/${productId}`);
+            return await apiService.delete(`/menu/product_toppings/${toppingId}`);
         } catch (error) {
-            console.error('Failed to remove product from category:', error);
+            console.error('Failed to delete topping:', error);
             errorLogger.manualLog(error);
             throw error;
         }
@@ -432,6 +538,23 @@ class MenuService {
         } else {
             return {
                 display: `${product.unit_price.toFixed(2)} ₽`,
+                details: ''
+            };
+        }
+    }
+
+    // Получение информации о цене для топпинга
+    getToppingPriceInfo(topping) {
+        if (topping.qty_measure === 'GRAMS') {
+            const defaultPrice = (topping.unit_price * topping.qty_default).toFixed(2);
+            const kgPrice = (topping.unit_price * 1000).toFixed(2);
+            return {
+                display: `${defaultPrice} ₽`,
+                details: `(${kgPrice} ₽/кг)`
+            };
+        } else {
+            return {
+                display: `${topping.unit_price.toFixed(2)} ₽`,
                 details: ''
             };
         }

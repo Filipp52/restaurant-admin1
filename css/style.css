@@ -915,3 +915,65 @@ body.logged-in .login-screen {
 .category-product-item:last-child {
     border-bottom: none;
 }
+
+/* Улучшаем нижнюю навигацию */
+.bottom-nav {
+    height: 80px; /* Увеличиваем высоту */
+    padding: 12px 0 16px; /* Увеличиваем отступ сверху и снизу */
+}
+
+.nav-item {
+    padding: 10px 4px 8px; /* Увеличиваем отступы для центрирования */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center; /* Центрируем по вертикали */
+    height: 100%;
+}
+
+.nav-icon {
+    font-size: 22px; /* Немного увеличиваем иконки */
+    margin-bottom: 4px;
+}
+
+/* Стили для топпингов */
+.toppings-container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* Стили для бейджа категорий товара */
+.product-category-badge {
+    background: var(--primary-light);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+    display: inline-block;
+    margin-right: 6px;
+    margin-bottom: 4px;
+}
+
+/* Улучшаем верхнюю панель */
+.nav-bar {
+    border-radius: 0 0 16px 16px;
+}
+
+/* Увеличиваем отступ снизу для контента */
+.main-content {
+    padding-bottom: 100px;
+}
+
+/* Адаптивность для десктопа */
+@media (min-width: 768px) {
+    .bottom-nav {
+        height: 70px;
+        padding: 8px 0 12px;
+    }
+
+    .nav-item {
+        padding: 8px 4px 6px;
+    }
+}

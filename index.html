@@ -87,16 +87,6 @@
 
                     <div class="form-row">
                         <div class="form-group">
-                            <label class="form-label">Категория</label>
-                            <select id="productCategory" class="form-input">
-                                <option value="">Без категории</option>
-                                <!-- Категории будут заполнены динамически -->
-                            </select>
-                        </div>
-                    </div>
-
-                    <div class="form-row">
-                        <div class="form-group">
                             <label class="form-label">Тип товара *</label>
                             <select id="productType" class="form-input" required onchange="app.onProductTypeChange()">
                                 <option value="">Выберите тип</option>
@@ -113,7 +103,7 @@
 
                     <div class="form-row">
                         <div class="form-group">
-                            <label class="form-label" id="priceLabel">Цена *</label>
+                            <label class="form-label" id="priceLabel">Цена за единицу *</label>
                             <input type="number" id="productPrice" class="form-input" step="0.01" min="0" required>
                         </div>
                         <div class="form-group">
@@ -191,11 +181,96 @@
                             <label for="categoryActive" style="margin-left: 8px;">Активная</label>
                         </div>
                     </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Изображение категории (PNG)</label>
+                        <div class="image-upload">
+                            <input type="file" id="categoryImage" accept=".png" style="display: none;">
+                            <button type="button" class="btn-secondary" onclick="document.getElementById('categoryImage').click()">
+                                📷 Выбрать PNG изображение
+                            </button>
+                            <span id="categoryImageFileName" class="file-name">Файл не выбран</span>
+                        </div>
+                    </div>
                 </form>
             </div>
             <div class="modal-footer">
                 <button class="btn-secondary" onclick="app.closeCategoryModal()">Отмена</button>
                 <button class="btn-primary" onclick="app.saveCategory()">Сохранить категорию</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно добавления/редактирования топпинга -->
+    <div id="toppingModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="toppingModalTitle">Добавить топпинг</h3>
+                <button class="close-btn" onclick="app.closeToppingModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="toppingForm">
+                    <input type="hidden" id="toppingId">
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Название топпинга *</label>
+                            <input type="text" id="toppingName" class="form-input" required>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Товар *</label>
+                            <select id="toppingProduct" class="form-input" required>
+                                <option value="">Выберите товар</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Единица измерения *</label>
+                            <select id="toppingMeasure" class="form-input" required>
+                                <option value="PIECES">Штуки</option>
+                                <option value="GRAMS">Граммы</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Цена за единицу *</label>
+                            <input type="number" id="toppingPrice" class="form-input" step="0.01" min="0" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Статус</label>
+                            <div style="margin-top: 8px;">
+                                <input type="checkbox" id="toppingActive" checked>
+                                <label for="toppingActive" style="margin-left: 8px;">Активный</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Мин. количество *</label>
+                            <input type="number" id="toppingMinQuantity" class="form-input" min="0" value="0" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Макс. количество *</label>
+                            <input type="number" id="toppingMaxQuantity" class="form-input" min="1" value="10" required>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Количество по умолчанию *</label>
+                            <input type="number" id="toppingDefaultQuantity" class="form-input" min="0" value="0" required>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="app.closeToppingModal()">Отмена</button>
+                <button class="btn-primary" onclick="app.saveTopping()">Сохранить топпинг</button>
             </div>
         </div>
     </div>
@@ -214,6 +289,19 @@
         document.getElementById('productImage').addEventListener('change', function(e) {
             const fileName = e.target.files[0] ? e.target.files[0].name : 'Файл не выбран';
             document.getElementById('imageFileName').textContent = fileName;
+        });
+
+        document.getElementById('categoryImage').addEventListener('change', function(e) {
+            const fileName = e.target.files[0] ? e.target.files[0].name : 'Файл не выбран';
+            document.getElementById('categoryImageFileName').textContent = fileName;
+
+            // Проверка формата PNG
+            const file = e.target.files[0];
+            if (file && file.type !== 'image/png') {
+                alert('Файл должен быть в формате PNG');
+                e.target.value = '';
+                document.getElementById('categoryImageFileName').textContent = 'Файл не выбран';
+            }
         });
 
         // Инициализация error logger после загрузки

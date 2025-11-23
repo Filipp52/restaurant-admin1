@@ -100,25 +100,21 @@ class AnalyticsService {
 
         switch(period) {
             case 'day':
-                // Группировка по часам за сегодня
                 labels = this.generateDayLabels();
                 data = this.groupOrdersByHour(orders, now);
                 break;
 
             case 'week':
-                // Группировка по дням недели
                 labels = this.generateWeekLabels();
                 data = this.groupOrdersByDay(orders, 7);
                 break;
 
             case 'month':
-                // Группировка по неделям месяца
                 labels = this.generateMonthLabels();
                 data = this.groupOrdersByWeek(orders, now);
                 break;
 
             case 'custom':
-                // Для кастомного периода группируем по дням
                 if (orders.length > 0) {
                     const dateRange = this.getDateRangeFromOrders(orders);
                     labels = this.generateDateRangeLabels(dateRange.start, dateRange.end);
@@ -189,8 +185,7 @@ class AnalyticsService {
             if (orderDate.toDateString() === date.toDateString()) {
                 const hour = orderDate.getHours();
                 if (hour >= 9 && hour <= 21) {
-                    const totalAmount = order.total_amount || 0;
-                    data[hour - 9] += totalAmount;
+                    data[hour - 9] += order.total_amount || 0;
                 }
             }
         });
@@ -208,8 +203,7 @@ class AnalyticsService {
             const dayDiff = Math.floor((today - orderDate) / (1000 * 60 * 60 * 24));
 
             if (dayDiff >= 0 && dayDiff < daysCount) {
-                const totalAmount = order.total_amount || 0;
-                data[daysCount - 1 - dayDiff] += totalAmount;
+                data[daysCount - 1 - dayDiff] += order.total_amount || 0;
             }
         });
 
@@ -228,8 +222,7 @@ class AnalyticsService {
             if (orderDate.getMonth() === date.getMonth() && orderDate.getFullYear() === date.getFullYear()) {
                 const week = Math.floor((orderDate.getDate() - 1) / 7);
                 if (week < weekCount) {
-                    const totalAmount = order.total_amount || 0;
-                    data[week] += totalAmount;
+                    data[week] += order.total_amount || 0;
                 }
             }
         });
@@ -247,8 +240,7 @@ class AnalyticsService {
             const dayIndex = Math.floor((orderDate - startDate) / (1000 * 60 * 60 * 24));
 
             if (dayIndex >= 0 && dayIndex < days) {
-                const totalAmount = order.total_amount || 0;
-                data[dayIndex] += totalAmount;
+                data[dayIndex] += order.total_amount || 0;
             }
         });
 
@@ -338,18 +330,6 @@ class AnalyticsService {
             'custom': 'выбранный период'
         };
         return texts[period] || 'период';
-    }
-
-    // Получение текста для статуса заказа
-    getOrderStatusText(status) {
-        const statuses = {
-            'DRAFT': 'Черновик',
-            'FORMED': 'Сформирован',
-            'PREPARING': 'Готовится',
-            'READY': 'Готов',
-            'COMPLETED': 'Завершен'
-        };
-        return statuses[status] || status;
     }
 
     // Очистка графиков

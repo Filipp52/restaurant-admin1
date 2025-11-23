@@ -7,7 +7,28 @@ class OrdersService {
             if (till) {
                 endpoint += `&till=${encodeURIComponent(till)}`;
             }
-            return await apiService.get(endpoint);
+            const orders = await apiService.get(endpoint);
+
+            // Для каждого заказа получаем полную сумму
+            const ordersWithTotals = await Promise.all(
+                orders.map(async (order) => {
+                    try {
+                        const totalAmount = await this.getOrderTotal(order.order_id);
+                        return {
+                            ...order,
+                            total_amount: totalAmount.total_amount || 0
+                        };
+                    } catch (error) {
+                        console.warn(`Failed to get total for order ${order.order_id}:`, error);
+                        return {
+                            ...order,
+                            total_amount: 0
+                        };
+                    }
+                })
+            );
+
+            return ordersWithTotals;
         } catch (error) {
             console.error('Failed to get completed orders:', error);
             errorLogger.manualLog(error);
@@ -69,25 +90,8 @@ class OrdersService {
 
     // Расчет статистики по заказам
     calculateOrdersStats(orders) {
-        // Для каждого заказа получаем полную сумму
-        const ordersWithTotals = orders.map(order => {
-            // Если у заказа нет total_amount, пытаемся рассчитать из items
-            let totalAmount = order.total_amount || 0;
-
-            if (totalAmount === 0 && order.items) {
-                totalAmount = order.items.reduce((sum, item) => {
-                    return sum + (item.quantity * item.unit_price);
-                }, 0);
-            }
-
-            return {
-                ...order,
-                calculated_total: totalAmount
-            };
-        });
-
-        const totalRevenue = ordersWithTotals.reduce((sum, order) => {
-            return sum + order.calculated_total;
+        const totalRevenue = orders.reduce((sum, order) => {
+            return sum + (order.total_amount || 0);
         }, 0);
 
         const totalOrders = orders.length;
@@ -97,7 +101,7 @@ class OrdersService {
             totalRevenue: Math.round(totalRevenue * 100) / 100, // Округляем до копеек
             totalOrders,
             averageOrder: Math.round(averageOrder * 100) / 100,
-            orders: ordersWithTotals
+            orders: orders
         };
     }
 
@@ -105,9 +109,10 @@ class OrdersService {
     async getTodayOrders() {
         const today = new Date();
         const from = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
+        const till = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59).toISOString();
 
         try {
-            const orders = await this.getCompletedOrders(from);
+            const orders = await this.getCompletedOrders(from, till);
             return Array.isArray(orders) ? orders : [];
         } catch (error) {
             console.error('Failed to get today orders:', error);
@@ -115,7 +120,7 @@ class OrdersService {
         }
     }
 
-    // Получение заказов за период с правильными датами
+    // Получение заказов за период
     async getOrdersByPeriod(period) {
         try {
             const now = new Date();
