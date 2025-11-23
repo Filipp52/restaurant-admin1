@@ -959,11 +959,48 @@ body.logged-in .login-screen {
     margin-bottom: 4px;
 }
 
-/* Стили для топпингов */
+/* Стили для контейнера топпингов */
 .toppings-container {
     display: flex;
     flex-direction: column;
     gap: 12px;
+}
+
+/* Стили для карточек топпингов */
+.topping-card {
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    justify-content: space-between;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.topping-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+/* Стили для поиска в топпингах */
+.search-box {
+    margin-bottom: 16px;
+}
+
+.search-box input {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 14px;
+    transition: border-color 0.2s ease;
+}
+
+.search-box input:focus {
+    outline: none;
+    border-color: var(--primary);
 }
 
 /* Стили для бейджа категорий товара */
