@@ -37,20 +37,18 @@ class ApiService {
             console.log(`📥 Ответ: ${response.status} ${response.statusText}`);
 
             if (response.status === 204) {
-                console.log('✅ 204 No Content - запрос успешен');
                 return null;
             }
 
             const data = await response.json();
 
             if (!response.ok) {
-                const error = new Error(data.detail || `HTTP ошибка! статус: ${response.status}`);
+                const error = new Error(`HTTP ошибка! Статус: ${response.status}; Тело: ${data}`);
                 error.status = response.status;
                 error.data = data;
                 throw error;
             }
 
-            console.log('✅ Запрос успешен');
             return data;
         } catch (error) {
             console.error('❌ Ошибка API запроса:', error);
